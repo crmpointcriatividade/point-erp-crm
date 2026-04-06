@@ -81,6 +81,7 @@ export interface Produto {
   categoria: string;
   markup_sugerido: number;
   custo_mao_obra_hora: number;
+  imagem_url: string | null;
   ativo: boolean;
   created_at: string;
 }
