@@ -98,20 +98,24 @@ export default function App() {
 
   const isAdmin=user.role==='admin';
   const tabs=[
-    {id:'kanban',     label:'CRM / Kanban',     icon:<LayoutDashboard size={20}/>, roles:['admin','colaborador']},
-    {id:'insumos',    label:'Insumos & Estoque', icon:<Package size={20}/>,         roles:['admin']},
-    {id:'clientes',   label:'Clientes',          icon:<Users size={20}/>,           roles:['admin','colaborador']},
-    {id:'fornecedores',label:'Fornecedores',     icon:<Building2 size={20}/>,       roles:['admin']},
-    {id:'vendas',     label:'Contas a Receber',  icon:<TrendingUp size={20}/>,      roles:['admin']},
-    {id:'compras',    label:'Compras',           icon:<Truck size={20}/>,           roles:['admin','colaborador']},
-    {id:'contaspagar',label:'Contas a Pagar',    icon:<TrendingDown size={20}/>,    roles:['admin']},
-    {id:'config',     label:'Configurações',     icon:<Settings size={20}/>,        roles:['admin']},
+    {id:'kanban',       label:'CRM / Kanban',      icon:<LayoutDashboard size={20}/>, roles:['admin','colaborador']},
+    {id:'insumos',      label:'Insumos & Estoque',  icon:<Package size={20}/>,         roles:['admin']},
+    {id:'produtos',     label:'Produtos & Kits',    icon:<ShoppingCart size={20}/>,    roles:['admin']},
+    {id:'clientes',     label:'Clientes',           icon:<Users size={20}/>,           roles:['admin','colaborador']},
+    {id:'fornecedores', label:'Fornecedores',       icon:<Building2 size={20}/>,       roles:['admin']},
+    {id:'vendas',       label:'Vendas',             icon:<TrendingUp size={20}/>,      roles:['admin']},
+    {id:'contasreceber',label:'Contas a Receber',   icon:<DollarSign size={20}/>,      roles:['admin']},
+    {id:'compras',      label:'Compras',            icon:<Truck size={20}/>,           roles:['admin','colaborador']},
+    {id:'contaspagar',  label:'Contas a Pagar',     icon:<TrendingDown size={20}/>,    roles:['admin']},
+    {id:'config',       label:'Configurações',      icon:<Settings size={20}/>,        roles:['admin']},
   ].filter(t=>t.roles.includes(user.role));
 
   const headerBtn=()=>{
-    if(activeTab==='clientes'&&isAdmin) return{label:'Novo Cliente',   action:()=>setModal('cliente')};
+    if(activeTab==='clientes'&&isAdmin) return{label:'Novo Cliente',    action:()=>setModal('cliente')};
     if(activeTab==='fornecedores')      return{label:'Novo Fornecedor', action:()=>setModal('fornecedor')};
     if(activeTab==='compras')           return{label:'Nova Compra',     action:()=>setModal('compra')};
+    if(activeTab==='produtos')          return{label:'Novo Produto',    action:()=>setModal('novoProduto')};
+    if(activeTab==='vendas'||activeTab==='contasreceber'||activeTab==='contaspagar') return{label:'Novo Orçamento', action:()=>setModal('pedido')};
     return{label:'Novo Orçamento', action:()=>setModal('pedido')};
   };
   const btn=headerBtn();
@@ -119,6 +123,11 @@ export default function App() {
 
   const abrirDetalheOrc=(p:Pedido)=>{setPedidoSelecionado(p);setModal('detalheOrc');};
   const abrirDetalheCompra=(c:Compra)=>{setCompraSelecionada(c);setModal('detalheCompra');};
+  // Key to force ComprasView reload after modal close
+  const[comprasKey,setComprasKey]=useState(0);
+  const closeDetalheCompra=()=>{setModal(null);setCompraSelecionada(null);setComprasKey(k=>k+1);};
+  const[kanbanKey,setKanbanKey]=useState(0);
+  const closeDetalheOrc=()=>{setModal(null);setPedidoSelecionado(null);setKanbanKey(k=>k+1);};
 
   return(
     <AuthCtx.Provider value={{user}}>
@@ -172,14 +181,16 @@ export default function App() {
           <div className="flex-1 overflow-auto p-4 md:p-8">
             <AnimatePresence mode="wait">
               <motion.div key={activeTab} initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-10}} transition={{duration:0.15}}>
-                {activeTab==='kanban'      && <KanbanView      searchQuery={searchQuery} onNovoPedido={()=>setModal('pedido')} onAbrirDetalhe={abrirDetalheOrc}/>}
-                {activeTab==='insumos'     && <InsumosView     searchQuery={searchQuery}/>}
-                {activeTab==='clientes'    && <ClientesView    searchQuery={searchQuery} onAdd={()=>setModal('cliente')}/>}
-                {activeTab==='fornecedores'&& <FornecedoresView searchQuery={searchQuery} onAdd={()=>setModal('fornecedor')}/>}
-                {activeTab==='vendas'      && <ContasReceberView/>}
-                {activeTab==='compras'     && <ComprasView     searchQuery={searchQuery} onAdd={()=>setModal('compra')} onAbrirDetalhe={abrirDetalheCompra}/>}
-                {activeTab==='contaspagar' && <ContasPagarView/>}
-                {activeTab==='config'      && <ConfigView/>}
+                {activeTab==='kanban'       && <KanbanView       key={kanbanKey} searchQuery={searchQuery} onNovoPedido={()=>setModal('pedido')} onAbrirDetalhe={abrirDetalheOrc}/>}
+                {activeTab==='insumos'      && <InsumosView      searchQuery={searchQuery}/>}
+                {activeTab==='produtos'     && <ProdutosView     searchQuery={searchQuery} onAdd={()=>setModal('novoProduto')}/>}
+                {activeTab==='clientes'     && <ClientesView     searchQuery={searchQuery} onAdd={()=>setModal('cliente')}/>}
+                {activeTab==='fornecedores' && <FornecedoresView searchQuery={searchQuery} onAdd={()=>setModal('fornecedor')}/>}
+                {activeTab==='vendas'       && <VendasView/>}
+                {activeTab==='contasreceber'&& <ContasReceberView key={kanbanKey}/>}
+                {activeTab==='compras'      && <ComprasView      key={comprasKey} searchQuery={searchQuery} onAdd={()=>setModal('compra')} onAbrirDetalhe={abrirDetalheCompra}/>}
+                {activeTab==='contaspagar'  && <ContasPagarView/>}
+                {activeTab==='config'       && <ConfigView/>}
               </motion.div>
             </AnimatePresence>
           </div>
@@ -190,10 +201,10 @@ export default function App() {
           {modal==='cliente'          && <ModalNovoCliente    onClose={()=>setModal(null)}/>}
           {modal==='novoClienteRapido'&& <ModalNovoCliente    onClose={()=>setModal(null)}/>}
           {modal==='fornecedor'       && <ModalNovoFornecedor onClose={()=>setModal(null)}/>}
-          {modal==='compra'           && <ModalNovaCompra     onClose={()=>setModal(null)}/>}
+          {modal==='compra'           && <ModalNovaCompra     onClose={()=>{setModal(null);setComprasKey(k=>k+1);}}/>}
           {modal==='novoProduto'      && <ModalNovoProduto    onClose={()=>setModal(null)}/>}
-          {modal==='detalheOrc'    && pedidoSelecionado  && <ModalDetalheOrcamento pedido={pedidoSelecionado}  onClose={()=>{setModal(null);setPedidoSelecionado(null);}}/>}
-          {modal==='detalheCompra' && compraSelecionada  && <ModalDetalheCompra    compra={compraSelecionada}  onClose={()=>{setModal(null);setCompraSelecionada(null);}}/>}
+          {modal==='detalheOrc'    && pedidoSelecionado  && <ModalDetalheOrcamento pedido={pedidoSelecionado}  onClose={closeDetalheOrc}/>}
+          {modal==='detalheCompra' && compraSelecionada  && <ModalDetalheCompra    compra={compraSelecionada}  onClose={closeDetalheCompra}/>}
         </AnimatePresence>
       </div>
     </AuthCtx.Provider>
@@ -517,6 +528,107 @@ function InsumosView({searchQuery}:{searchQuery:string}) {
   );
 }
 
+/* ── PRODUTOS & KITS ──────────────────────────────────────── */
+function ProdutosView({searchQuery,onAdd}:{searchQuery:string;onAdd:()=>void}) {
+  const[produtos,setProdutos]=useState<Produto[]>([]);
+  const[loading,setLoading]=useState(true);
+  const load=useCallback(async()=>{
+    setLoading(true);
+    let q=supabase.from('produtos').select('*').eq('ativo',true).order('nome');
+    if(searchQuery.trim())q=q.ilike('nome',`%${searchQuery}%`);
+    const{data}=await q;setProdutos(data||[]);setLoading(false);
+  },[searchQuery]);
+  useEffect(()=>{load();},[load]);
+  if(loading)return<LoadingSpinner label="Carregando produtos..."/>;
+  return(
+    <div className="space-y-5">
+      <div className="flex justify-between items-end flex-wrap gap-3">
+        <div>
+          <h2 className="text-2xl md:text-3xl font-black">Produtos & Kits</h2>
+          <p className="text-slate-500 text-sm">{produtos.length} produtos cadastrados — são o que você <b>vende</b> ao cliente</p>
+        </div>
+        <button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Produto</button>
+      </div>
+      <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 flex gap-3">
+        <AlertTriangle size={16} className="text-indigo-400 shrink-0 mt-0.5"/>
+        <p className="text-sm text-indigo-700"><b>Dica:</b> Produtos são o que você vende (Kit Festa, Adesivo, Convite). Insumos são o que você compra (Papel, Tinta, Vinil). A composição de um produto define quais insumos ele consome.</p>
+      </div>
+      {produtos.length===0?(
+        <div className="bg-white rounded-3xl border border-slate-200 p-16 flex flex-col items-center gap-4 text-slate-300">
+          <ShoppingCart size={48}/>
+          <p className="font-black text-slate-400 text-lg uppercase tracking-widest">Nenhum produto</p>
+          <p className="text-slate-400 text-sm text-center">Clique em "Novo Produto" para cadastrar o que você vende.<br/>Ex: Kit Festa Safari, Convite Casamento, Adesivo 10x10.</p>
+          <button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 transition-all mt-2"><Plus size={15} strokeWidth={3}/>Cadastrar Primeiro Produto</button>
+        </div>
+      ):(
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
+          <table className="w-full text-left min-w-[600px]">
+            <thead><tr className="bg-slate-50 border-b border-slate-100">{['Produto','Categoria','Markup','MO/hora','Ações'].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {produtos.map(p=>(
+                <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-5 py-4 font-bold text-slate-800 text-sm"><div><p>{p.nome}</p>{p.descricao&&<p className="text-xs text-slate-400 font-normal">{p.descricao}</p>}</div></td>
+                  <td className="px-5 py-4"><span className="text-[10px] font-black uppercase bg-indigo-50 text-indigo-600 px-2 py-1 rounded-full">{p.categoria}</span></td>
+                  <td className="px-5 py-4 font-bold text-slate-700 text-sm">{p.markup_sugerido}×</td>
+                  <td className="px-5 py-4 font-bold text-slate-700 text-sm">R$ {Number(p.custo_mao_obra_hora).toFixed(2)}/h</td>
+                  <td className="px-5 py-4"><button className="text-indigo-600 font-bold text-sm hover:underline">Editar</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── VENDAS (resumo de orçamentos finalizados) ─────────────── */
+function VendasView() {
+  const[pedidos,setPedidos]=useState<any[]>([]);
+  const[loading,setLoading]=useState(true);
+  const load=useCallback(async()=>{
+    setLoading(true);
+    const{data}=await supabase.from('pedidos')
+      .select('*, kanban_status(*), clientes(nome)')
+      .order('updated_at',{ascending:false});
+    const finalizados=(data||[]).filter((p:any)=>p.kanban_status?.nome==='Finalizado');
+    setPedidos(finalizados);setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  const totalVendas=pedidos.reduce((a,p)=>a+Number(p.valor_total),0);
+  if(loading)return<LoadingSpinner label="Carregando vendas..."/>;
+  return(
+    <div className="space-y-5">
+      <div><h2 className="text-2xl md:text-3xl font-black">Vendas</h2><p className="text-slate-500 text-sm">Orçamentos com status <b>Finalizado</b></p></div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Total de Vendas</p><p className="text-2xl font-black text-indigo-600">R$ {totalVendas.toFixed(2)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Nº de Pedidos</p><p className="text-2xl font-black text-slate-700">{pedidos.length}</p></div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Ticket Médio</p><p className="text-2xl font-black text-emerald-600">R$ {pedidos.length>0?(totalVendas/pedidos.length).toFixed(2):'0.00'}</p></div>
+      </div>
+      {pedidos.length===0?(
+        <div className="bg-white rounded-3xl border border-slate-200 p-16 flex flex-col items-center gap-4 text-slate-300"><TrendingUp size={48}/><p className="font-black text-slate-400 text-lg uppercase tracking-widest">Nenhuma venda</p><p className="text-slate-400 text-sm">Mova um orçamento para "Finalizado" no CRM/Kanban ou use "Transformar em Venda".</p></div>
+      ):(
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
+          <table className="w-full text-left min-w-[600px]">
+            <thead><tr className="bg-slate-50 border-b border-slate-100">{['Código','Cliente','Valor Total','Data','Ações'].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {pedidos.map(p=>(
+                <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-5 py-4 font-black text-indigo-600 text-sm">#{p.codigo}</td>
+                  <td className="px-5 py-4 font-bold text-slate-800 text-sm">{p.clientes?.nome||p.cliente_nome_avulso||'—'}</td>
+                  <td className="px-5 py-4 font-black text-emerald-600 text-sm">R$ {Number(p.valor_total).toFixed(2)}</td>
+                  <td className="px-5 py-4 text-sm text-slate-500">{new Date(p.updated_at||p.created_at).toLocaleDateString('pt-BR')}</td>
+                  <td className="px-5 py-4"><span className="flex items-center gap-1 text-emerald-600 text-xs font-bold"><CheckCircle2 size={13}/>Finalizado</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── CLIENTES ──────────────────────────────────────────────── */
 function ClientesView({searchQuery,onAdd}:{searchQuery:string;onAdd:()=>void}) {
   const{clientes,loading}=useClientes(searchQuery);
@@ -639,7 +751,7 @@ function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
   const salvar=async()=>{
     setSalvando(true);
     await supabase.from('compras').update({status,itens,total,updated_at:new Date().toISOString()}).eq('id',compra.id);
-    setSalvando(false);setToast('Compra salva!');setToastColor('emerald');
+    setSalvando(false);setToast('Compra salva! Feche para atualizar a lista.');setToastColor('emerald');
   };
 
   const enviarContasPagar=async()=>{
@@ -913,11 +1025,16 @@ function ModalNovoFornecedor({onClose}:{onClose:()=>void}) {
 function ModalNovaCompra({onClose}:{onClose:()=>void}) {
   const{fornecedores}=useFornecedores();
   const[buscaF,setBuscaF]=useState('');const[forn,setForn]=useState<any|null>(null);const[showF,setShowF]=useState(false);const fRef=useRef<HTMLDivElement>(null);
+  const[insumosList,setInsumosList]=useState<any[]>([]);
+  const[buscaInsumo,setBuscaInsumo]=useState('');const[showInsumo,setShowInsumo]=useState(false);const insumoRef=useRef<HTMLDivElement>(null);
   const[itens,setItens]=useState([{id:crypto.randomUUID(),descricao:'',quantidade:1,valor_unitario:0}]);
   const[form,setForm]=useState({data:new Date().toISOString().split('T')[0],nota_fiscal:'',observacoes:''});
   const[salvando,setSalvando]=useState(false);const[erro,setErro]=useState('');const[toast,setToast]=useState('');
-  useEffect(()=>{const h=(e:MouseEvent)=>{if(fRef.current&&!fRef.current.contains(e.target as Node))setShowF(false);};document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);},[]);
+  useEffect(()=>{const h=(e:MouseEvent)=>{if(fRef.current&&!fRef.current.contains(e.target as Node))setShowF(false);if(insumoRef.current&&!insumoRef.current.contains(e.target as Node))setShowInsumo(false);};document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);},[]);
+  useEffect(()=>{supabase.from('insumos').select('*').eq('ativo',true).order('nome').then(({data})=>setInsumosList(data||[]));},[]);
   const fornFilt=fornecedores.filter(f=>f.nome.toLowerCase().includes(buscaF.toLowerCase())&&buscaF.length>0).slice(0,6);
+  const insumosFilt=insumosList.filter(i=>i.nome.toLowerCase().includes(buscaInsumo.toLowerCase())&&buscaInsumo.length>0).slice(0,6);
+  const addInsumo=(ins:any)=>{setItens(p=>[...p,{id:crypto.randomUUID(),descricao:ins.nome,quantidade:1,valor_unitario:Number(ins.custo_unitario)||0}]);setBuscaInsumo('');setShowInsumo(false);};
   const total=itens.reduce((a,i)=>a+i.quantidade*i.valor_unitario,0);
   const addL=()=>setItens(p=>[...p,{id:crypto.randomUUID(),descricao:'',quantidade:1,valor_unitario:0}]);
   const upd=(id:string,k:string,v:any)=>setItens(p=>p.map(i=>i.id===id?{...i,[k]:v}:i));
@@ -940,7 +1057,19 @@ function ModalNovaCompra({onClose}:{onClose:()=>void}) {
         <Campo label="Nota Fiscal"><input type="text" placeholder="NF-e 000123" value={form.nota_fiscal} onChange={e=>setForm({...form,nota_fiscal:e.target.value})} className={inputClass}/></Campo>
       </div>
       <div className="space-y-2">
-        <div className="flex justify-between items-center"><p className="text-xs font-black text-slate-500 uppercase">Itens</p><button onClick={addL} className="text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1"><Plus size={11}/>Adicionar linha</button></div>
+        <div className="flex justify-between items-center"><p className="text-xs font-black text-slate-500 uppercase">Itens Comprados</p><button onClick={addL} className="text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1"><Plus size={11}/>Adicionar linha manual</button></div>
+        {/* Busca de insumos */}
+        <div className="relative" ref={insumoRef}>
+          <input type="text" placeholder="Buscar insumo do estoque (Papel, Tinta, Vinil...)..." className={inputClass} value={buscaInsumo} onChange={e=>{setBuscaInsumo(e.target.value);setShowInsumo(true);}} onFocus={()=>setShowInsumo(true)}/>
+          {showInsumo&&buscaInsumo.length>0&&(
+            <div className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
+              {insumosFilt.length>0
+                ?insumosFilt.map(ins=><button key={ins.id} onClick={()=>addInsumo(ins)} className="w-full text-left px-4 py-3 hover:bg-indigo-50 flex items-center justify-between"><div><p className="font-bold text-sm">{ins.nome}</p><p className="text-xs text-slate-400">{ins.tipo} • R$ {Number(ins.custo_unitario).toFixed(4)}/{ins.unidade_medida}</p></div><Plus size={14} className="text-indigo-400"/></button>)
+                :<div className="p-4 text-sm text-slate-500">Insumo não encontrado. Use "Adicionar linha manual".</div>
+              }
+            </div>
+          )}
+        </div>
         <div className="border border-slate-200 rounded-2xl overflow-hidden overflow-x-auto">
           <table className="w-full text-sm min-w-[440px]">
             <thead><tr className="bg-slate-50 border-b border-slate-100"><th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase">Descrição</th><th className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 uppercase w-16">Qtd</th><th className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 uppercase w-28">Vlr Unit (R$)</th><th className="px-3 py-2.5 text-right text-[10px] font-black text-slate-400 uppercase w-24">Total</th><th className="w-8"></th></tr></thead>
