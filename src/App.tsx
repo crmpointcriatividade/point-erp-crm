@@ -14,7 +14,7 @@ import { supabase } from './lib/supabase';
 import type { Pedido, Cliente, Produto, Compra } from './lib/supabase';
 
 /* ── TIPOS ─────────────────────────────────────────────────── */
-type ModalType = 'pedido'|'cliente'|'fornecedor'|'compra'|'novoProduto'|'novoClienteRapido'|'detalheOrc'|'detalheCompra'|null;
+type ModalType = 'pedido'|'cliente'|'fornecedor'|'compra'|'novoProduto'|'novoClienteRapido'|'detalheOrc'|'detalheCompra'|'editarCliente'|'editarInsumo'|'editarProduto'|'perfilCliente'|null;
 type UserRole = 'admin'|'colaborador';
 interface AppUser { nome:string; role:UserRole; }
 
@@ -90,6 +90,9 @@ export default function App() {
   const[sidebarOpen,setSidebarOpen]=useState(false);
   const[pedidoSelecionado,setPedidoSelecionado]=useState<Pedido|null>(null);
   const[compraSelecionada,setCompraSelecionada]=useState<Compra|null>(null);
+  const[clienteSelecionadoEdit,setClienteSelecionadoEdit]=useState<any|null>(null);
+  const[insumoSelecionadoEdit,setInsumoSelecionadoEdit]=useState<any|null>(null);
+  const[produtoSelecionadoEdit,setProdutoSelecionadoEdit]=useState<any|null>(null);
 
   const login=(u:AppUser)=>{sessionStorage.setItem('point_user',JSON.stringify(u));setUser(u);};
   const logout=()=>{sessionStorage.removeItem('point_user');setUser(null);};
@@ -122,6 +125,10 @@ export default function App() {
   const navigate=(tab:string)=>{setActiveTab(tab);setSidebarOpen(false);setSearchQuery('');};
 
   const abrirDetalheOrc=(p:Pedido)=>{setPedidoSelecionado(p);setModal('detalheOrc');};
+  const abrirEditarCliente=(c:any)=>{setClienteSelecionadoEdit(c);setModal('editarCliente');};
+  const abrirEditarInsumo=(i:any)=>{setInsumoSelecionadoEdit(i);setModal('editarInsumo');};
+  const abrirEditarProduto=(p:any)=>{setProdutoSelecionadoEdit(p);setModal('editarProduto');};
+  const abrirPerfilCliente=(c:any)=>{setClienteSelecionadoEdit(c);setModal('perfilCliente');};
   const abrirDetalheCompra=(c:Compra)=>{setCompraSelecionada(c);setModal('detalheCompra');};
   // Key to force ComprasView reload after modal close
   const[comprasKey,setComprasKey]=useState(0);
@@ -182,9 +189,9 @@ export default function App() {
             <AnimatePresence mode="wait">
               <motion.div key={activeTab} initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-10}} transition={{duration:0.15}}>
                 {activeTab==='kanban'       && <KanbanView       key={kanbanKey} searchQuery={searchQuery} onNovoPedido={()=>setModal('pedido')} onAbrirDetalhe={abrirDetalheOrc}/>}
-                {activeTab==='insumos'      && <InsumosView      searchQuery={searchQuery}/>}
-                {activeTab==='produtos'     && <ProdutosView     searchQuery={searchQuery} onAdd={()=>setModal('novoProduto')}/>}
-                {activeTab==='clientes'     && <ClientesView     searchQuery={searchQuery} onAdd={()=>setModal('cliente')}/>}
+                {activeTab==='insumos'      && <InsumosView      searchQuery={searchQuery} onEditar={abrirEditarInsumo}/>}
+                {activeTab==='produtos'     && <ProdutosView     searchQuery={searchQuery} onAdd={()=>setModal('novoProduto')} onEditar={abrirEditarProduto}/>}
+                {activeTab==='clientes'     && <ClientesView     searchQuery={searchQuery} onAdd={()=>setModal('cliente')} onVerPerfil={abrirPerfilCliente}/>}
                 {activeTab==='fornecedores' && <FornecedoresView searchQuery={searchQuery} onAdd={()=>setModal('fornecedor')}/>}
                 {activeTab==='vendas'       && <VendasView/>}
                 {activeTab==='contasreceber'&& <ContasReceberView key={kanbanKey}/>}
@@ -203,8 +210,12 @@ export default function App() {
           {modal==='fornecedor'       && <ModalNovoFornecedor onClose={()=>setModal(null)}/>}
           {modal==='compra'           && <ModalNovaCompra     onClose={()=>{setModal(null);setComprasKey(k=>k+1);}}/>}
           {modal==='novoProduto'      && <ModalNovoProduto    onClose={()=>setModal(null)}/>}
-          {modal==='detalheOrc'    && pedidoSelecionado  && <ModalDetalheOrcamento pedido={pedidoSelecionado}  onClose={closeDetalheOrc}/>}
-          {modal==='detalheCompra' && compraSelecionada  && <ModalDetalheCompra    compra={compraSelecionada}  onClose={closeDetalheCompra}/>}
+          {modal==='detalheOrc'      && pedidoSelecionado     && <ModalDetalheOrcamento pedido={pedidoSelecionado}   onClose={closeDetalheOrc}/>}
+          {modal==='detalheCompra'   && compraSelecionada     && <ModalDetalheCompra    compra={compraSelecionada}   onClose={closeDetalheCompra}/>}
+          {modal==='editarCliente'   && clienteSelecionadoEdit && <ModalEditarCliente   cliente={clienteSelecionadoEdit} onClose={()=>{setModal(null);setClienteSelecionadoEdit(null);setKanbanKey(k=>k+1);}}/>}
+          {modal==='perfilCliente'   && clienteSelecionadoEdit && <ModalPerfilCliente   cliente={clienteSelecionadoEdit} onClose={()=>{setModal(null);setClienteSelecionadoEdit(null);}}/>}
+          {modal==='editarInsumo'    && insumoSelecionadoEdit  && <ModalEditarInsumo    insumo={insumoSelecionadoEdit}   onClose={()=>{setModal(null);setInsumoSelecionadoEdit(null);setKanbanKey(k=>k+1);}}/>}
+          {modal==='editarProduto'   && produtoSelecionadoEdit && <ModalEditarProduto   produto={produtoSelecionadoEdit} onClose={()=>{setModal(null);setProdutoSelecionadoEdit(null);setKanbanKey(k=>k+1);}}/>}
         </AnimatePresence>
       </div>
     </AuthCtx.Provider>
@@ -406,7 +417,12 @@ function ModalDetalheOrcamento({pedido,onClose}:{pedido:Pedido;onClose:()=>void}
         <div>
           <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Cliente</p>
           <p className="font-black text-slate-800">{pedido.clientes?.nome||pedido.cliente_nome_avulso||'—'}</p>
-          {(pedido.clientes?.whatsapp||pedido.cliente_contato_avulso)&&<p className="text-xs text-emerald-600 font-bold mt-0.5">{pedido.clientes?.whatsapp||pedido.cliente_contato_avulso}</p>}
+          {(pedido.clientes?.whatsapp||pedido.cliente_contato_avulso)&&(
+          <a href={`https://wa.me/55${(pedido.clientes?.whatsapp||pedido.cliente_contato_avulso||'').replace(/\D/g,'')}`} target="_blank" rel="noreferrer"
+            className="flex items-center gap-1.5 text-xs text-emerald-600 font-bold mt-1 hover:underline">
+            <MessageSquare size={12}/>{pedido.clientes?.whatsapp||pedido.cliente_contato_avulso}
+          </a>
+        )}
         </div>
         <div>
           <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Status</p>
@@ -498,7 +514,7 @@ function ModalDetalheOrcamento({pedido,onClose}:{pedido:Pedido;onClose:()=>void}
 }
 
 /* ── INSUMOS ───────────────────────────────────────────────── */
-function InsumosView({searchQuery}:{searchQuery:string}) {
+function InsumosView({searchQuery,onEditar}:{searchQuery:string;onEditar:(i:any)=>void}) {
   const{insumos,insumosAbaixoMinimo,loading}=useInsumos(searchQuery);
   if(loading)return<LoadingSpinner label="Carregando insumos..."/>;
   return(
@@ -529,7 +545,7 @@ function InsumosView({searchQuery}:{searchQuery:string}) {
 }
 
 /* ── PRODUTOS & KITS ──────────────────────────────────────── */
-function ProdutosView({searchQuery,onAdd}:{searchQuery:string;onAdd:()=>void}) {
+function ProdutosView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=>void;onEditar:(p:any)=>void}) {
   const[produtos,setProdutos]=useState<Produto[]>([]);
   const[loading,setLoading]=useState(true);
   const load=useCallback(async()=>{
@@ -571,7 +587,7 @@ function ProdutosView({searchQuery,onAdd}:{searchQuery:string;onAdd:()=>void}) {
                   <td className="px-5 py-4"><span className="text-[10px] font-black uppercase bg-indigo-50 text-indigo-600 px-2 py-1 rounded-full">{p.categoria}</span></td>
                   <td className="px-5 py-4 font-bold text-slate-700 text-sm">{p.markup_sugerido}×</td>
                   <td className="px-5 py-4 font-bold text-slate-700 text-sm">R$ {Number(p.custo_mao_obra_hora).toFixed(2)}/h</td>
-                  <td className="px-5 py-4"><button className="text-indigo-600 font-bold text-sm hover:underline">Editar</button></td>
+                  <td className="px-5 py-4"><button onClick={()=>onEditar(i)} className="text-indigo-600 font-bold text-sm hover:underline">Editar</button></td>
                 </tr>
               ))}
             </tbody>
@@ -630,7 +646,7 @@ function VendasView() {
 }
 
 /* ── CLIENTES ──────────────────────────────────────────────── */
-function ClientesView({searchQuery,onAdd}:{searchQuery:string;onAdd:()=>void}) {
+function ClientesView({searchQuery,onAdd,onVerPerfil}:{searchQuery:string;onAdd:()=>void;onVerPerfil:(c:any)=>void}) {
   const{clientes,loading}=useClientes(searchQuery);
   const{user}=useAuth();
   if(loading)return<LoadingSpinner label="Carregando clientes..."/>;
@@ -651,7 +667,7 @@ function ClientesView({searchQuery,onAdd}:{searchQuery:string;onAdd:()=>void}) {
                 <td className="px-6 py-4 text-sm text-slate-500">{c.cpf_cnpj||'—'}</td>
                 <td className="px-6 py-4 text-sm text-slate-500">{c.cidade||'—'}</td>
                 <td className="px-6 py-4">{c.whatsapp?<a href={`https://wa.me/55${c.whatsapp.replace(/\D/g,'')}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-emerald-600 font-bold text-sm hover:underline"><MessageSquare size={13}/>{c.whatsapp}</a>:<span className="text-slate-300 text-sm">—</span>}</td>
-                <td className="px-6 py-4"><button className="text-indigo-600 font-bold text-sm hover:underline">Ver Perfil</button></td>
+                <td className="px-6 py-4"><button onClick={()=>onVerPerfil(c)} className="text-indigo-600 font-bold text-sm hover:underline">Ver Perfil</button></td>
               </tr>
             ))}
           </tbody>
@@ -1116,6 +1132,295 @@ function ConfigView() {
       </div>
     </div>
   );
+}
+
+/* ── MODAL EDITAR CLIENTE ──────────────────────────────────── */
+function ModalEditarCliente({cliente,onClose}:{cliente:any;onClose:()=>void}) {
+  const[form,setForm]=useState({
+    nome:cliente.nome||'', cpf_cnpj:cliente.cpf_cnpj||'', email:cliente.email||'',
+    telefone:cliente.telefone||'', whatsapp:cliente.whatsapp||'',
+    cidade:cliente.cidade||'', estado:cliente.estado||'', observacoes:cliente.observacoes||'',
+  });
+  const[salvando,setSalvando]=useState(false);const[erro,setErro]=useState('');const[toast,setToast]=useState('');
+  const salvar=async()=>{
+    if(!form.nome.trim()){setErro('Nome obrigatório.');return;}
+    setSalvando(true);
+    const{error}=await supabase.from('clientes').update(form).eq('id',cliente.id);
+    if(error){setErro('Erro: '+error.message);setSalvando(false);}
+    else{setToast('Cliente atualizado! ✅');setTimeout(onClose,1500);}
+  };
+  return(<><ModalWrapper title={`Editar Cliente — ${cliente.nome}`} onClose={onClose}>
+    {erro&&<MsgErro msg={erro}/>}
+    <Campo label="Nome *"><input type="text" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} className={inputClass}/></Campo>
+    <div className="grid grid-cols-2 gap-4">
+      <Campo label="CPF / CNPJ"><input type="text" value={form.cpf_cnpj} onChange={e=>setForm({...form,cpf_cnpj:e.target.value})} className={inputClass}/></Campo>
+      <Campo label="WhatsApp"><input type="text" value={form.whatsapp} onChange={e=>setForm({...form,whatsapp:e.target.value})} className={inputClass}/></Campo>
+    </div>
+    <div className="grid grid-cols-2 gap-4">
+      <Campo label="E-mail"><input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} className={inputClass}/></Campo>
+      <Campo label="Telefone"><input type="text" value={form.telefone} onChange={e=>setForm({...form,telefone:e.target.value})} className={inputClass}/></Campo>
+    </div>
+    <div className="grid grid-cols-2 gap-4">
+      <Campo label="Cidade"><input type="text" value={form.cidade} onChange={e=>setForm({...form,cidade:e.target.value})} className={inputClass}/></Campo>
+      <Campo label="Estado"><input type="text" maxLength={2} value={form.estado} onChange={e=>setForm({...form,estado:e.target.value.toUpperCase()})} className={inputClass}/></Campo>
+    </div>
+    <Campo label="Observações"><textarea rows={2} value={form.observacoes} onChange={e=>setForm({...form,observacoes:e.target.value})} className={inputClass+' resize-none'}/></Campo>
+    <BotaoSalvar onClick={salvar} loading={salvando} label="Salvar Alterações"/>
+  </ModalWrapper>
+  <AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
+}
+
+/* ── MODAL PERFIL CLIENTE ──────────────────────────────────── */
+function ModalPerfilCliente({cliente,onClose}:{cliente:any;onClose:()=>void}) {
+  const[pedidos,setPedidos]=useState<any[]>([]);
+  const[loading,setLoading]=useState(true);
+  useEffect(()=>{
+    supabase.from('pedidos').select('*, kanban_status(nome)')
+      .eq('cliente_id',cliente.id).order('created_at',{ascending:false})
+      .then(({data})=>{setPedidos(data||[]);setLoading(false);});
+  },[cliente.id]);
+  const totalGasto=pedidos.reduce((a,p)=>a+Number(p.valor_total),0);
+  return(
+    <ModalWrapper title={`Perfil — ${cliente.nome}`} onClose={onClose} size="lg">
+      {/* Dados */}
+      <div className="grid grid-cols-2 gap-4 bg-slate-50 rounded-2xl p-4">
+        <div><p className="text-xs text-slate-400 font-bold uppercase mb-1">CPF/CNPJ</p><p className="font-bold text-slate-800 text-sm">{cliente.cpf_cnpj||'—'}</p></div>
+        <div><p className="text-xs text-slate-400 font-bold uppercase mb-1">WhatsApp</p>
+          {cliente.whatsapp
+            ?<a href={`https://wa.me/55${cliente.whatsapp.replace(/\D/g,'')}`} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-emerald-600 font-bold text-sm hover:underline"><MessageSquare size={13}/>{cliente.whatsapp}</a>
+            :<p className="font-bold text-slate-800 text-sm">—</p>}
+        </div>
+        <div><p className="text-xs text-slate-400 font-bold uppercase mb-1">E-mail</p><p className="font-bold text-slate-800 text-sm">{cliente.email||'—'}</p></div>
+        <div><p className="text-xs text-slate-400 font-bold uppercase mb-1">Cidade</p><p className="font-bold text-slate-800 text-sm">{cliente.cidade?`${cliente.cidade}/${cliente.estado||''}`:'—'}</p></div>
+      </div>
+      {/* Resumo financeiro */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-indigo-50 rounded-2xl p-4"><p className="text-xs text-slate-400 font-bold uppercase mb-1">Pedidos</p><p className="text-xl font-black text-indigo-600">{pedidos.length}</p></div>
+        <div className="bg-emerald-50 rounded-2xl p-4"><p className="text-xs text-slate-400 font-bold uppercase mb-1">Total Gasto</p><p className="text-xl font-black text-emerald-600">R$ {totalGasto.toFixed(2)}</p></div>
+        <div className="bg-amber-50 rounded-2xl p-4"><p className="text-xs text-slate-400 font-bold uppercase mb-1">Ticket Médio</p><p className="text-xl font-black text-amber-600">R$ {pedidos.length>0?(totalGasto/pedidos.length).toFixed(2):'0.00'}</p></div>
+      </div>
+      {/* Histórico de pedidos */}
+      <div>
+        <p className="text-xs font-black text-slate-500 uppercase tracking-wider mb-3">Histórico de Pedidos</p>
+        {loading?<LoadingSpinner label="Carregando..."/>:pedidos.length===0
+          ?<p className="text-center text-slate-400 text-sm py-6">Nenhum pedido encontrado.</p>
+          :<div className="border border-slate-200 rounded-2xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead><tr className="bg-slate-50 border-b border-slate-100"><th className="px-4 py-3 text-left text-[10px] font-black text-slate-400 uppercase">Código</th><th className="px-4 py-3 text-left text-[10px] font-black text-slate-400 uppercase">Status</th><th className="px-4 py-3 text-right text-[10px] font-black text-slate-400 uppercase">Valor</th><th className="px-4 py-3 text-right text-[10px] font-black text-slate-400 uppercase">Data</th></tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {pedidos.map(p=>(
+                  <tr key={p.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 font-bold text-indigo-600">#{p.codigo}</td>
+                    <td className="px-4 py-3"><span className="text-[10px] font-black uppercase bg-slate-100 text-slate-600 px-2 py-1 rounded-full">{p.kanban_status?.nome||'—'}</span></td>
+                    <td className="px-4 py-3 text-right font-black text-slate-700">R$ {Number(p.valor_total).toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right text-slate-400">{new Date(p.created_at).toLocaleDateString('pt-BR')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+    </ModalWrapper>
+  );
+}
+
+/* ── MODAL EDITAR INSUMO ───────────────────────────────────── */
+function ModalEditarInsumo({insumo,onClose}:{insumo:any;onClose:()=>void}) {
+  const[form,setForm]=useState({
+    nome:insumo.nome||'', tipo:insumo.tipo||'papel',
+    unidade_medida:insumo.unidade_medida||'unidade',
+    custo_unitario:String(insumo.custo_unitario||0),
+    estoque_atual:String(insumo.estoque_atual||0),
+    estoque_minimo:String(insumo.estoque_minimo||0),
+    gramatura:String(insumo.gramatura||''),
+    observacoes:insumo.observacoes||'',
+  });
+  const[salvando,setSalvando]=useState(false);const[erro,setErro]=useState('');const[toast,setToast]=useState('');
+  const salvar=async()=>{
+    if(!form.nome.trim()){setErro('Nome obrigatório.');return;}
+    setSalvando(true);
+    const{error}=await supabase.from('insumos').update({
+      nome:form.nome, tipo:form.tipo, unidade_medida:form.unidade_medida,
+      custo_unitario:Number(form.custo_unitario),
+      estoque_atual:Number(form.estoque_atual),
+      estoque_minimo:Number(form.estoque_minimo),
+      gramatura:form.gramatura?Number(form.gramatura):null,
+      observacoes:form.observacoes||null,
+      updated_at:new Date().toISOString(),
+    }).eq('id',insumo.id);
+    if(error){setErro('Erro: '+error.message);setSalvando(false);}
+    else{setToast('Insumo atualizado! ✅');setTimeout(onClose,1500);}
+  };
+  return(<><ModalWrapper title={`Editar Insumo — ${insumo.nome}`} onClose={onClose}>
+    {erro&&<MsgErro msg={erro}/>}
+    <Campo label="Nome *"><input type="text" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} className={inputClass}/></Campo>
+    <div className="grid grid-cols-2 gap-4">
+      <Campo label="Tipo">
+        <select value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value})} className={inputClass}>
+          {['papel','tinta','fita','cola','vinil','embalagem','outro'].map(t=><option key={t} value={t}>{t}</option>)}
+        </select>
+      </Campo>
+      <Campo label="Unidade de Medida">
+        <select value={form.unidade_medida} onChange={e=>setForm({...form,unidade_medida:e.target.value})} className={inputClass}>
+          {['folha','ml','metro','unidade','kg','litro'].map(u=><option key={u} value={u}>{u}</option>)}
+        </select>
+      </Campo>
+    </div>
+    <div className="grid grid-cols-3 gap-3">
+      <Campo label="Custo Unit. (R$)"><input type="number" step="0.0001" min="0" value={form.custo_unitario} onChange={e=>setForm({...form,custo_unitario:e.target.value})} className={inputClass}/></Campo>
+      <Campo label="Estoque Atual"><input type="number" step="0.01" min="0" value={form.estoque_atual} onChange={e=>setForm({...form,estoque_atual:e.target.value})} className={inputClass}/></Campo>
+      <Campo label="Estoque Mínimo"><input type="number" step="0.01" min="0" value={form.estoque_minimo} onChange={e=>setForm({...form,estoque_minimo:e.target.value})} className={inputClass}/></Campo>
+    </div>
+    <Campo label="Gramatura g/m² (para papéis)"><input type="number" step="0.1" value={form.gramatura} onChange={e=>setForm({...form,gramatura:e.target.value})} className={inputClass}/></Campo>
+    <Campo label="Observações"><textarea rows={2} value={form.observacoes} onChange={e=>setForm({...form,observacoes:e.target.value})} className={inputClass+' resize-none'}/></Campo>
+    <BotaoSalvar onClick={salvar} loading={salvando} label="Salvar Alterações"/>
+  </ModalWrapper>
+  <AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
+}
+
+/* ── MODAL EDITAR PRODUTO + COMPOSIÇÃO (BOM) ───────────────── */
+function ModalEditarProduto({produto,onClose}:{produto:any;onClose:()=>void}) {
+  const[form,setForm]=useState({
+    nome:produto.nome||'', descricao:produto.descricao||'',
+    categoria:produto.categoria||'kit',
+    markup_sugerido:String(produto.markup_sugerido||2.5),
+    custo_mao_obra_hora:String(produto.custo_mao_obra_hora||25),
+  });
+  const[bom,setBom]=useState<any[]>([]);
+  const[insumosList,setInsumosList]=useState<any[]>([]);
+  const[buscaIns,setBuscaIns]=useState('');const[showIns,setShowIns]=useState(false);
+  const insRef=useRef<HTMLDivElement>(null);
+  const[salvando,setSalvando]=useState(false);const[erro,setErro]=useState('');const[toast,setToast]=useState('');
+
+  useEffect(()=>{
+    // Load BOM
+    supabase.from('composicao_produtos').select('*, insumos(nome,unidade_medida), maquinas(nome)')
+      .eq('produto_id',produto.id).then(({data})=>setBom(data||[]));
+    // Load insumos list
+    supabase.from('insumos').select('*').eq('ativo',true).order('nome').then(({data})=>setInsumosList(data||[]));
+  },[produto.id]);
+
+  useEffect(()=>{
+    const h=(e:MouseEvent)=>{if(insRef.current&&!insRef.current.contains(e.target as Node))setShowIns(false);};
+    document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);
+  },[]);
+
+  const insFilt=insumosList.filter(i=>i.nome.toLowerCase().includes(buscaIns.toLowerCase())&&buscaIns.length>0).slice(0,6);
+
+  const addBomItem=(ins:any)=>{
+    setBom(prev=>[...prev,{id:'new-'+crypto.randomUUID(),produto_id:produto.id,insumo_id:ins.id,maquina_id:null,quantidade_insumo:1,percentual_desperdicio:5,tempo_maquina_minutos:0,insumos:{nome:ins.nome,unidade_medida:ins.unidade_medida},_novo:true}]);
+    setBuscaIns('');setShowIns(false);
+  };
+  const updBom=(id:string,k:string,v:any)=>setBom(prev=>prev.map(b=>b.id===id?{...b,[k]:v,_dirty:true}:b));
+  const delBom=async(item:any)=>{
+    if(!item._novo)await supabase.from('composicao_produtos').delete().eq('id',item.id);
+    setBom(prev=>prev.filter(b=>b.id!==item.id));
+  };
+
+  const custoTotal=bom.reduce((a,b)=>{
+    const custo=(insumosList.find(i=>i.id===b.insumo_id)?.custo_unitario||0)*Number(b.quantidade_insumo||0)*(1+Number(b.percentual_desperdicio||0)/100);
+    return a+custo;
+  },0);
+  const precoSugerido=custoTotal*Number(form.markup_sugerido||2.5);
+
+  const salvar=async()=>{
+    if(!form.nome.trim()){setErro('Nome obrigatório.');return;}
+    setSalvando(true);
+    // Update produto
+    await supabase.from('produtos').update({
+      nome:form.nome,descricao:form.descricao||null,categoria:form.categoria,
+      markup_sugerido:Number(form.markup_sugerido),custo_mao_obra_hora:Number(form.custo_mao_obra_hora),
+      updated_at:new Date().toISOString(),
+    }).eq('id',produto.id);
+    // Insert novos itens do BOM
+    const novos=bom.filter(b=>b._novo);
+    if(novos.length>0){
+      await supabase.from('composicao_produtos').insert(novos.map(({id,_novo,_dirty,insumos:ins,...rest})=>rest));
+    }
+    // Update editados
+    const editados=bom.filter(b=>b._dirty&&!b._novo);
+    for(const b of editados){
+      const{_dirty,insumos:ins,...rest}=b;
+      await supabase.from('composicao_produtos').update({quantidade_insumo:rest.quantidade_insumo,percentual_desperdicio:rest.percentual_desperdicio}).eq('id',rest.id);
+    }
+    setSalvando(false);setToast('Produto salvo! ✅');setTimeout(onClose,1500);
+  };
+
+  return(<><ModalWrapper title={`Editar Produto — ${produto.nome}`} onClose={onClose} size="lg">
+    {erro&&<MsgErro msg={erro}/>}
+    {/* Dados básicos */}
+    <Campo label="Nome *"><input type="text" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} className={inputClass}/></Campo>
+    <Campo label="Descrição"><input type="text" value={form.descricao} onChange={e=>setForm({...form,descricao:e.target.value})} className={inputClass}/></Campo>
+    <div className="grid grid-cols-3 gap-3">
+      <Campo label="Categoria">
+        <select value={form.categoria} onChange={e=>setForm({...form,categoria:e.target.value})} className={inputClass}>
+          {['kit','adesivo','impresso','personalizado'].map(c=><option key={c} value={c}>{c}</option>)}
+        </select>
+      </Campo>
+      <Campo label="Markup (×)"><input type="number" step="0.1" min="1" value={form.markup_sugerido} onChange={e=>setForm({...form,markup_sugerido:e.target.value})} className={inputClass}/></Campo>
+      <Campo label="MO/hora (R$)"><input type="number" step="0.5" min="0" value={form.custo_mao_obra_hora} onChange={e=>setForm({...form,custo_mao_obra_hora:e.target.value})} className={inputClass}/></Campo>
+    </div>
+
+    {/* BOM - Composição */}
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-black text-slate-500 uppercase tracking-wider">Composição de Insumos (BOM)</p>
+        {custoTotal>0&&<div className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full">Custo: R$ {custoTotal.toFixed(4)} → Venda: R$ {precoSugerido.toFixed(2)}</div>}
+      </div>
+      <div className="relative" ref={insRef}>
+        <input type="text" placeholder="Adicionar insumo à composição..." className={inputClass} value={buscaIns}
+          onChange={e=>{setBuscaIns(e.target.value);setShowIns(true);}} onFocus={()=>setShowIns(true)}/>
+        {showIns&&buscaIns.length>0&&(
+          <div className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
+            {insFilt.length>0
+              ?insFilt.map(i=><button key={i.id} onClick={()=>addBomItem(i)} className="w-full text-left px-4 py-3 hover:bg-indigo-50 flex items-center justify-between"><div><p className="font-bold text-sm">{i.nome}</p><p className="text-xs text-slate-400">{i.tipo} • R$ {Number(i.custo_unitario).toFixed(4)}/{i.unidade_medida}</p></div><Plus size={14} className="text-indigo-400"/></button>)
+              :<div className="p-4 text-sm text-slate-400">Nenhum insumo encontrado.</div>
+            }
+          </div>
+        )}
+      </div>
+      {bom.length>0?(
+        <div className="border border-slate-200 rounded-2xl overflow-hidden overflow-x-auto">
+          <table className="w-full text-sm min-w-[500px]">
+            <thead><tr className="bg-slate-50 border-b border-slate-100">
+              <th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase">Insumo</th>
+              <th className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 uppercase w-24">Quantidade</th>
+              <th className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 uppercase w-24">Desperdício %</th>
+              <th className="px-3 py-2.5 text-right text-[10px] font-black text-slate-400 uppercase w-28">Custo</th>
+              <th className="w-8"></th>
+            </tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {bom.map(b=>{
+                const ins=insumosList.find(i=>i.id===b.insumo_id);
+                const custo=(ins?.custo_unitario||0)*Number(b.quantidade_insumo||0)*(1+Number(b.percentual_desperdicio||0)/100);
+                return(
+                  <tr key={b.id}>
+                    <td className="px-3 py-2 font-bold text-sm text-slate-800">{b.insumos?.nome||ins?.nome||'—'}<span className="text-xs text-slate-400 font-normal ml-1">/{b.insumos?.unidade_medida||ins?.unidade_medida}</span></td>
+                    <td className="px-3 py-2"><input type="number" min="0" step="0.001" value={b.quantidade_insumo} onChange={e=>updBom(b.id,'quantidade_insumo',Number(e.target.value))} className="w-full text-center text-sm font-bold bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/></td>
+                    <td className="px-3 py-2"><input type="number" min="0" max="100" step="0.5" value={b.percentual_desperdicio} onChange={e=>updBom(b.id,'percentual_desperdicio',Number(e.target.value))} className="w-full text-center text-sm font-bold bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/></td>
+                    <td className="px-3 py-2 text-right font-black text-indigo-600 text-sm">R$ {custo.toFixed(4)}</td>
+                    <td className="px-3 py-2"><button onClick={()=>delBom(b)} className="text-slate-300 hover:text-rose-500"><Trash2 size={13}/></button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot><tr className="bg-indigo-50 border-t-2 border-indigo-100">
+              <td colSpan={3} className="px-3 py-3 text-right font-black text-slate-600 text-sm uppercase">Custo Total:</td>
+              <td className="px-3 py-3 text-right font-black text-indigo-700">R$ {custoTotal.toFixed(4)}</td>
+              <td></td>
+            </tr></tfoot>
+          </table>
+        </div>
+      ):(
+        <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center text-slate-400 text-sm">
+          Busque insumos acima para montar a composição deste produto
+        </div>
+      )}
+    </div>
+    <BotaoSalvar onClick={salvar} loading={salvando} label="Salvar Produto e Composição"/>
+  </ModalWrapper>
+  <AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
 }
 
 /* ── AUXILIARES ────────────────────────────────────────────── */
