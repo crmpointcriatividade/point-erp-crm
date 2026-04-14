@@ -14,7 +14,7 @@ import { supabase } from './lib/supabase';
 import type { Pedido, Cliente, Produto, Compra } from './lib/supabase';
 
 /* ── TIPOS ─────────────────────────────────────────────────── */
-type ModalType = 'pedido'|'cliente'|'fornecedor'|'compra'|'novoProduto'|'novoClienteRapido'|'detalheOrc'|'detalheCompra'|'editarCliente'|'editarInsumo'|'editarProduto'|'perfilCliente'|'editarFornecedor'|null;
+type ModalType = 'pedido'|'cliente'|'fornecedor'|'compra'|'novoProduto'|'novoClienteRapido'|'detalheOrc'|'detalheCompra'|'editarCliente'|'editarInsumo'|'editarProduto'|'perfilCliente'|'editarFornecedor'|'editarCR'|'editarCP'|'novoLancamentoCaixa'|'novoUsuario'|'editarUsuario'|null;
 type UserRole = 'admin'|'colaborador';
 interface AppUser { nome:string; role:UserRole; }
 
@@ -41,15 +41,29 @@ const USUARIOS = [
 
 /* ── LOGIN ─────────────────────────────────────────────────── */
 function TelaLogin({onLogin}:{onLogin:(u:AppUser)=>void}) {
-  const[nome,setNome]=useState('');
+  const[email,setEmail]=useState('');
   const[senha,setSenha]=useState('');
   const[erro,setErro]=useState('');
   const[ver,setVer]=useState(false);
-  const login=()=>{
-    const u=USUARIOS.find(u=>u.nome.toLowerCase()===nome.toLowerCase().trim()&&u.senha===senha);
-    if(!u){setErro('Usuário ou senha incorretos.');return;}
-    onLogin({nome:u.nome,role:u.role});
+  const[loading,setLoading]=useState(false);
+
+  const login=async()=>{
+    if(!email.trim()||!senha.trim()){setErro('Preencha e-mail e senha.');return;}
+    setLoading(true);setErro('');
+    // Try database users first
+    const{data,error}=await supabase.from('usuarios_sistema')
+      .select('*').eq('email',email.toLowerCase().trim()).eq('ativo',true).single();
+    if(!error&&data&&data.senha_hash===senha){
+      setLoading(false);
+      onLogin({nome:data.nome,role:data.role as UserRole});
+      return;
+    }
+    // Fallback to local list (while table doesn't exist)
+    const u=USUARIOS.find(u=>u.nome.toLowerCase()===email.toLowerCase().trim()&&u.senha===senha);
+    if(u){setLoading(false);onLogin({nome:u.nome,role:u.role});return;}
+    setLoading(false);setErro('E-mail ou senha incorretos.');
   };
+
   return(
     <div className="min-h-screen bg-gradient-to-br from-indigo-600 to-indigo-900 flex items-center justify-center p-4">
       <motion.div initial={{opacity:0,y:30}} animate={{opacity:1,y:0}} className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm">
@@ -59,19 +73,23 @@ function TelaLogin({onLogin}:{onLogin:(u:AppUser)=>void}) {
         </div>
         {erro&&<div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-3 text-sm font-medium mb-4">{erro}</div>}
         <div className="space-y-4">
-          <Campo label="Usuário"><input type="text" placeholder="Seu nome" value={nome} onChange={e=>setNome(e.target.value)} onKeyDown={e=>e.key==='Enter'&&login()} className={inputClass}/></Campo>
+          <Campo label="E-mail">
+            <input type="email" placeholder="seu@email.com" value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&login()} className={inputClass}/>
+          </Campo>
           <Campo label="Senha">
             <div className="relative">
               <input type={ver?'text':'password'} placeholder="••••••••" value={senha} onChange={e=>setSenha(e.target.value)} onKeyDown={e=>e.key==='Enter'&&login()} className={inputClass+' pr-10'}/>
               <button onClick={()=>setVer(!ver)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600">{ver?<EyeOff size={16}/>:<Eye size={16}/>}</button>
             </div>
           </Campo>
-          <button onClick={login} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-indigo-200 transition-all active:scale-95 mt-2">Entrar</button>
+          <button onClick={login} disabled={loading} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-70 text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-indigo-200 transition-all active:scale-95 mt-2">
+            {loading?'Verificando...':'Entrar'}
+          </button>
         </div>
         <div className="mt-6 p-4 bg-slate-50 rounded-2xl space-y-2">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Acessos de teste</p>
-          <p className="text-xs text-slate-500 flex items-center gap-2"><Shield size={12} className="text-indigo-500"/><b>Admin Point</b> / admin123</p>
-          <p className="text-xs text-slate-500 flex items-center gap-2"><UserCheck size={12} className="text-emerald-500"/><b>Colaborador</b> / colab123</p>
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Acesso inicial</p>
+          <p className="text-xs text-slate-500 flex items-center gap-2"><Shield size={12} className="text-indigo-500"/>E-mail: <b>admin@point.com</b> / Senha: <b>admin123</b></p>
+          <p className="text-xs text-slate-400 mt-1">Após executar o SQL, cadastre novos usuários em Configurações.</p>
         </div>
       </motion.div>
     </div>
@@ -94,6 +112,11 @@ export default function App() {
   const[fornecedorSelecionadoEdit,setFornecedorSelecionadoEdit]=useState<any|null>(null);
   const[insumoSelecionadoEdit,setInsumoSelecionadoEdit]=useState<any|null>(null);
   const[produtoSelecionadoEdit,setProdutoSelecionadoEdit]=useState<any|null>(null);
+  const[crSelecionado,setCrSelecionado]=useState<any|null>(null);
+  const[cpSelecionado,setCpSelecionado]=useState<any|null>(null);
+  const[usuarioSelecionado,setUsuarioSelecionado]=useState<any|null>(null);
+  const[contasKey,setContasKey]=useState(0);
+  const[caixaKey,setCaixaKey]=useState(0);
 
   const login=(u:AppUser)=>{sessionStorage.setItem('point_user',JSON.stringify(u));setUser(u);};
   const logout=()=>{sessionStorage.removeItem('point_user');setUser(null);};
@@ -127,6 +150,9 @@ export default function App() {
 
   const abrirDetalheOrc=(p:Pedido)=>{setPedidoSelecionado(p);setModal('detalheOrc');};
   const abrirEditarCliente=(c:any)=>{setClienteSelecionadoEdit(c);setModal('editarCliente');};
+  const abrirEditarCR=(c:any)=>{setCrSelecionado(c);setModal('editarCR');};
+  const abrirEditarCP=(c:any)=>{setCpSelecionado(c);setModal('editarCP');};
+  const abrirEditarUsuario=(u:any)=>{setUsuarioSelecionado(u);setModal('editarUsuario');};
   const abrirEditarFornecedor=(f:any)=>{setFornecedorSelecionadoEdit(f);setModal('editarFornecedor');};
   const abrirEditarInsumo=(i:any)=>{setInsumoSelecionadoEdit(i);setModal('editarInsumo');};
   const abrirEditarProduto=(p:any)=>{setProdutoSelecionadoEdit(p);setModal('editarProduto');};
@@ -185,6 +211,9 @@ export default function App() {
             <button onClick={btn.action} className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-200 active:scale-95 shrink-0">
               <Plus size={16} strokeWidth={3}/><span className="hidden sm:inline">{btn.label}</span><span className="sm:hidden">Novo</span>
             </button>
+            <button onClick={logout} title="Sair do sistema" className="hidden md:flex items-center gap-1.5 px-3 py-2.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all text-sm font-bold shrink-0">
+              <LogOut size={16}/>
+            </button>
           </header>
 
           <div className="flex-1 overflow-auto p-4 md:p-8">
@@ -196,10 +225,11 @@ export default function App() {
                 {activeTab==='clientes'     && <ClientesView     searchQuery={searchQuery} onAdd={()=>setModal('cliente')} onVerPerfil={abrirPerfilCliente}/>}
                 {activeTab==='fornecedores' && <FornecedoresView searchQuery={searchQuery} onAdd={()=>setModal('fornecedor')} onEditar={abrirEditarFornecedor}/>}
                 {activeTab==='vendas'       && <VendasView/>}
-                {activeTab==='contasreceber'&& <ContasReceberView key={kanbanKey}/>}
+                {activeTab==='contasreceber'&& <ContasReceberView key={contasKey} onEditar={abrirEditarCR}/>}
                 {activeTab==='compras'      && <ComprasView      key={comprasKey} searchQuery={searchQuery} onAdd={()=>setModal('compra')} onAbrirDetalhe={abrirDetalheCompra}/>}
-                {activeTab==='contaspagar'  && <ContasPagarView/>}
-                {activeTab==='config'       && <ConfigView/>}
+                {activeTab==='contaspagar'  && <ContasPagarView  key={contasKey} onEditar={abrirEditarCP}/>}
+                {activeTab==='caixa'        && <CaixaView       key={caixaKey} onNovo={()=>setModal('novoLancamentoCaixa')} onLancado={()=>setCaixaKey(k=>k+1)}/>}
+                {activeTab==='config'       && <ConfigView      onNovoUsuario={()=>setModal('novoUsuario')} onEditarUsuario={abrirEditarUsuario}/>}
               </motion.div>
             </AnimatePresence>
           </div>
@@ -218,7 +248,12 @@ export default function App() {
           {modal==='perfilCliente'   && clienteSelecionadoEdit && <ModalPerfilCliente   cliente={clienteSelecionadoEdit} onClose={()=>{setModal(null);setClienteSelecionadoEdit(null);}} onEditar={(c)=>{setModal(null);setTimeout(()=>abrirEditarCliente(c),100);}}/>}
           {modal==='editarInsumo'    && insumoSelecionadoEdit  && <ModalEditarInsumo    insumo={insumoSelecionadoEdit}   onClose={()=>{setModal(null);setInsumoSelecionadoEdit(null);setKanbanKey(k=>k+1);}}/>}
           {modal==='editarProduto'   && produtoSelecionadoEdit   && <ModalEditarProduto   produto={produtoSelecionadoEdit}   onClose={()=>{setModal(null);setProdutoSelecionadoEdit(null);setKanbanKey(k=>k+1);}}/>}
-          {modal==='editarFornecedor'&& fornecedorSelecionadoEdit && <ModalEditarFornecedor fornecedor={fornecedorSelecionadoEdit} onClose={()=>{setModal(null);setFornecedorSelecionadoEdit(null);setKanbanKey(k=>k+1);}}/>}
+          {modal==='editarFornecedor'  && fornecedorSelecionadoEdit && <ModalEditarFornecedor  fornecedor={fornecedorSelecionadoEdit} onClose={()=>{setModal(null);setFornecedorSelecionadoEdit(null);setKanbanKey(k=>k+1);}}/>}
+          {modal==='editarCR'          && crSelecionado             && <ModalEditarCR           conta={crSelecionado}              onClose={()=>{setModal(null);setCrSelecionado(null);setContasKey(k=>k+1);}}/>}
+          {modal==='editarCP'          && cpSelecionado             && <ModalEditarCP           conta={cpSelecionado}              onClose={()=>{setModal(null);setCpSelecionado(null);setContasKey(k=>k+1);}}/>}
+          {modal==='novoLancamentoCaixa'&&                             <ModalNovoLancamentoCaixa                                   onClose={()=>{setModal(null);setCaixaKey(k=>k+1);}}/>}
+          {modal==='novoUsuario'       &&                             <ModalNovoUsuario                                            onClose={()=>setModal(null)}/>}
+          {modal==='editarUsuario'     && usuarioSelecionado         && <ModalEditarUsuario      usuario={usuarioSelecionado}       onClose={()=>{setModal(null);setUsuarioSelecionado(null);}}/>}
         </AnimatePresence>
       </div>
     </AuthCtx.Provider>
@@ -850,41 +885,55 @@ function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
 }
 
 /* ── CONTAS A RECEBER ──────────────────────────────────────── */
-function ContasReceberView() {
+function ContasReceberView({onEditar}:{onEditar:(c:any)=>void}) {
   const[contas,setContas]=useState<any[]>([]);
   const[loading,setLoading]=useState(true);
-  const load=useCallback(async()=>{setLoading(true);const{data}=await supabase.from('contas_receber').select('*').order('created_at',{ascending:false});setContas(data||[]);setLoading(false);},[]);
+  const[erroTabela,setErroTabela]=useState(false);
+  const load=useCallback(async()=>{
+    setLoading(true);setErroTabela(false);
+    const{data,error}=await supabase.from('contas_receber').select('*').order('data_vencimento',{ascending:true});
+    if(error){console.error('contas_receber:',error.message);setErroTabela(true);}
+    else setContas(data||[]);
+    setLoading(false);
+  },[]);
   useEffect(()=>{load();},[load]);
-  const total=contas.filter(c=>c.status==='Aguardando').reduce((a,c)=>a+Number(c.valor),0);
+  const aReceber=contas.filter(c=>c.status==='Aguardando').reduce((a,c)=>a+Number(c.valor),0);
   const recebido=contas.filter(c=>c.status==='Recebido').reduce((a,c)=>a+Number(c.valor),0);
+  const atrasado=contas.filter(c=>c.status==='Atrasado').reduce((a,c)=>a+Number(c.valor),0);
   if(loading)return<LoadingSpinner label="Carregando contas a receber..."/>;
   return(
     <div className="space-y-5">
       <div className="flex justify-between items-end flex-wrap gap-3">
-        <div><h2 className="text-2xl md:text-3xl font-black">Contas a Receber</h2><p className="text-slate-500 text-sm">Gerado ao transformar orçamentos em vendas</p></div>
+        <div><h2 className="text-2xl md:text-3xl font-black">Contas a Receber</h2><p className="text-slate-500 text-sm">Clique em Editar para alterar valor, vencimento ou status</p></div>
         <button onClick={load} className="flex items-center gap-2 p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all" title="Atualizar"><RefreshCw size={17}/></button>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">A Receber</p><p className="text-2xl font-black text-amber-600">R$ {total.toFixed(2)}</p></div>
-        <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Recebido</p><p className="text-2xl font-black text-emerald-600">R$ {recebido.toFixed(2)}</p></div>
-        <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Total de Registros</p><p className="text-2xl font-black text-slate-700">{contas.length}</p></div>
+      {erroTabela&&<ErroTabela tabela="contas_receber"/>}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="bg-white border border-slate-200 rounded-2xl p-4"><p className="text-xs font-black text-slate-400 uppercase mb-1">A Receber</p><p className="text-xl font-black text-amber-600">R$ {aReceber.toFixed(2)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4"><p className="text-xs font-black text-slate-400 uppercase mb-1">Recebido</p><p className="text-xl font-black text-emerald-600">R$ {recebido.toFixed(2)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4"><p className="text-xs font-black text-slate-400 uppercase mb-1">Atrasado</p><p className="text-xl font-black text-rose-600">R$ {atrasado.toFixed(2)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4"><p className="text-xs font-black text-slate-400 uppercase mb-1">Registros</p><p className="text-xl font-black text-slate-700">{contas.length}</p></div>
       </div>
-      {contas.length===0?(
-        <div className="bg-white rounded-3xl border border-slate-200 p-16 flex flex-col items-center gap-4 text-slate-300"><TrendingUp size={48}/><p className="font-black text-slate-400 text-lg uppercase tracking-widest">Nenhuma conta</p><p className="text-slate-400 text-sm">Transforme um orçamento em venda no CRM/Kanban.</p></div>
-      ):(
+      {!erroTabela&&contas.length===0&&<div className="bg-white rounded-3xl border border-slate-200 p-16 flex flex-col items-center gap-4 text-slate-300"><TrendingUp size={48}/><p className="font-black text-slate-400 text-lg uppercase tracking-widest">Nenhuma conta</p><p className="text-slate-400 text-sm">Transforme um orçamento em venda no CRM/Kanban.</p></div>}
+      {contas.length>0&&(
         <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
-          <table className="w-full text-left min-w-[600px]">
-            <thead><tr className="bg-slate-50 border-b border-slate-100">{['Cliente','Descrição','Valor','Vencimento','Status'].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
+          <table className="w-full text-left min-w-[700px]">
+            <thead><tr className="bg-slate-50 border-b border-slate-100">{['Cliente','Descrição','Valor','Vencimento','Status','Ação'].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {contas.map(c=>(
-                <tr key={c.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-5 py-4 font-bold text-slate-800 text-sm">{c.cliente_nome}</td>
-                  <td className="px-5 py-4 text-sm text-slate-500">{c.descricao}</td>
-                  <td className="px-5 py-4 font-black text-emerald-600 text-sm">R$ {Number(c.valor).toFixed(2)}</td>
-                  <td className="px-5 py-4 text-sm text-slate-500">{c.data_vencimento?new Date(c.data_vencimento).toLocaleDateString('pt-BR'):'—'}</td>
-                  <td className="px-5 py-4"><BadgeStatus status={c.status||'Aguardando'} options={STATUS_CR} onChange={async s=>{await supabase.from('contas_receber').update({status:s,data_recebimento:s==='Recebido'?new Date().toISOString():null}).eq('id',c.id);load();}}/></td>
-                </tr>
-              ))}
+              {contas.map(c=>{
+                const venc=c.data_vencimento?new Date(c.data_vencimento+'T12:00:00'):null;
+                const atras=venc&&venc<new Date()&&c.status==='Aguardando';
+                return(
+                  <tr key={c.id} className={cn('hover:bg-slate-50 transition-colors',atras&&'bg-rose-50/30')}>
+                    <td className="px-5 py-4 font-bold text-slate-800 text-sm">{c.cliente_nome}</td>
+                    <td className="px-5 py-4 text-sm text-slate-500 max-w-[180px] truncate">{c.descricao||'—'}</td>
+                    <td className="px-5 py-4 font-black text-emerald-600 text-sm">R$ {Number(c.valor).toFixed(2)}</td>
+                    <td className={cn('px-5 py-4 text-sm font-bold',atras?'text-rose-600':'text-slate-500')}>{venc?venc.toLocaleDateString('pt-BR'):'—'}{atras&&' ⚠️'}</td>
+                    <td className="px-5 py-4"><BadgeStatus status={c.status||'Aguardando'} options={STATUS_CR} onChange={async s=>{await supabase.from('contas_receber').update({status:s,data_recebimento:s==='Recebido'?new Date().toISOString():null}).eq('id',c.id);load();}}/></td>
+                    <td className="px-5 py-4"><button onClick={()=>onEditar(c)} className="text-indigo-600 font-bold text-sm hover:underline">Editar</button></td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -894,38 +943,55 @@ function ContasReceberView() {
 }
 
 /* ── CONTAS A PAGAR ────────────────────────────────────────── */
-function ContasPagarView() {
+function ContasPagarView({onEditar}:{onEditar:(c:any)=>void}) {
   const[contas,setContas]=useState<any[]>([]);
   const[loading,setLoading]=useState(true);
-  const load=useCallback(async()=>{setLoading(true);const{data}=await supabase.from('contas_pagar').select('*').order('created_at',{ascending:false});setContas(data||[]);setLoading(false);},[]);
+  const[erroTabela,setErroTabela]=useState(false);
+  const load=useCallback(async()=>{
+    setLoading(true);setErroTabela(false);
+    const{data,error}=await supabase.from('contas_pagar').select('*').order('data_vencimento',{ascending:true});
+    if(error){console.error('contas_pagar:',error.message);setErroTabela(true);}
+    else setContas(data||[]);
+    setLoading(false);
+  },[]);
   useEffect(()=>{load();},[load]);
-  const total=contas.filter(c=>c.status==='Aguardando').reduce((a,c)=>a+Number(c.valor),0);
+  const aPagar=contas.filter(c=>c.status==='Aguardando').reduce((a,c)=>a+Number(c.valor),0);
   const pago=contas.filter(c=>c.status==='Pago').reduce((a,c)=>a+Number(c.valor),0);
+  const atrasado=contas.filter(c=>c.status==='Atrasado').reduce((a,c)=>a+Number(c.valor),0);
   if(loading)return<LoadingSpinner label="Carregando contas a pagar..."/>;
   return(
     <div className="space-y-5">
-      <div><h2 className="text-2xl md:text-3xl font-black">Contas a Pagar</h2><p className="text-slate-500 text-sm">Gerado automaticamente ao registrar compras</p></div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">A Pagar</p><p className="text-2xl font-black text-rose-600">R$ {total.toFixed(2)}</p></div>
-        <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Pago</p><p className="text-2xl font-black text-emerald-600">R$ {pago.toFixed(2)}</p></div>
-        <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Total de Registros</p><p className="text-2xl font-black text-slate-700">{contas.length}</p></div>
+      <div className="flex justify-between items-end flex-wrap gap-3">
+        <div><h2 className="text-2xl md:text-3xl font-black">Contas a Pagar</h2><p className="text-slate-500 text-sm">Clique em Editar para alterar valor, vencimento ou status</p></div>
+        <button onClick={load} className="flex items-center gap-2 p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all" title="Atualizar"><RefreshCw size={17}/></button>
       </div>
-      {contas.length===0?(
-        <div className="bg-white rounded-3xl border border-slate-200 p-16 flex flex-col items-center gap-4 text-slate-300"><TrendingDown size={48}/><p className="font-black text-slate-400 text-lg uppercase tracking-widest">Nenhuma conta</p><p className="text-slate-400 text-sm">Envie uma compra para Contas a Pagar nos Detalhes da compra.</p></div>
-      ):(
+      {erroTabela&&<ErroTabela tabela="contas_pagar"/>}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="bg-white border border-slate-200 rounded-2xl p-4"><p className="text-xs font-black text-slate-400 uppercase mb-1">A Pagar</p><p className="text-xl font-black text-rose-600">R$ {aPagar.toFixed(2)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4"><p className="text-xs font-black text-slate-400 uppercase mb-1">Pago</p><p className="text-xl font-black text-emerald-600">R$ {pago.toFixed(2)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4"><p className="text-xs font-black text-slate-400 uppercase mb-1">Atrasado</p><p className="text-xl font-black text-amber-600">R$ {atrasado.toFixed(2)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4"><p className="text-xs font-black text-slate-400 uppercase mb-1">Registros</p><p className="text-xl font-black text-slate-700">{contas.length}</p></div>
+      </div>
+      {!erroTabela&&contas.length===0&&<div className="bg-white rounded-3xl border border-slate-200 p-16 flex flex-col items-center gap-4 text-slate-300"><TrendingDown size={48}/><p className="font-black text-slate-400 text-lg uppercase tracking-widest">Nenhuma conta</p><p className="text-slate-400 text-sm">Envie compras para Contas a Pagar nos detalhes de uma compra.</p></div>}
+      {contas.length>0&&(
         <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
-          <table className="w-full text-left min-w-[600px]">
-            <thead><tr className="bg-slate-50 border-b border-slate-100">{['Fornecedor','Descrição','Valor','Vencimento','Status'].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
+          <table className="w-full text-left min-w-[700px]">
+            <thead><tr className="bg-slate-50 border-b border-slate-100">{['Fornecedor','Descrição','Valor','Vencimento','Status','Ação'].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {contas.map(c=>(
-                <tr key={c.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-5 py-4 font-bold text-slate-800 text-sm">{c.fornecedor_nome}</td>
-                  <td className="px-5 py-4 text-sm text-slate-500">{c.descricao}</td>
-                  <td className="px-5 py-4 font-black text-rose-600 text-sm">R$ {Number(c.valor).toFixed(2)}</td>
-                  <td className="px-5 py-4 text-sm text-slate-500">{c.data_vencimento?new Date(c.data_vencimento).toLocaleDateString('pt-BR'):'—'}</td>
-                  <td className="px-5 py-4"><BadgeStatus status={c.status||'Aguardando'} options={STATUS_CP} onChange={async s=>{await supabase.from('contas_pagar').update({status:s,data_pagamento:s==='Pago'?new Date().toISOString():null}).eq('id',c.id);load();}}/></td>
-                </tr>
-              ))}
+              {contas.map(c=>{
+                const venc=c.data_vencimento?new Date(c.data_vencimento+'T12:00:00'):null;
+                const atras=venc&&venc<new Date()&&c.status==='Aguardando';
+                return(
+                  <tr key={c.id} className={cn('hover:bg-slate-50 transition-colors',atras&&'bg-rose-50/30')}>
+                    <td className="px-5 py-4 font-bold text-slate-800 text-sm">{c.fornecedor_nome}</td>
+                    <td className="px-5 py-4 text-sm text-slate-500 max-w-[180px] truncate">{c.descricao||'—'}</td>
+                    <td className="px-5 py-4 font-black text-rose-600 text-sm">R$ {Number(c.valor).toFixed(2)}</td>
+                    <td className={cn('px-5 py-4 text-sm font-bold',atras?'text-rose-600':'text-slate-500')}>{venc?venc.toLocaleDateString('pt-BR'):'—'}{atras&&' ⚠️'}</td>
+                    <td className="px-5 py-4"><BadgeStatus status={c.status||'Aguardando'} options={STATUS_CP} onChange={async s=>{await supabase.from('contas_pagar').update({status:s,data_pagamento:s==='Pago'?new Date().toISOString():null}).eq('id',c.id);load();}}/></td>
+                    <td className="px-5 py-4"><button onClick={()=>onEditar(c)} className="text-indigo-600 font-bold text-sm hover:underline">Editar</button></td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -933,7 +999,6 @@ function ContasPagarView() {
     </div>
   );
 }
-
 /* ── MODAIS DE CADASTRO ────────────────────────────────────── */
 function ModalNovoPedido({onClose,onAbrirNovoProduto,onAbrirNovoCliente}:{onClose:()=>void;onAbrirNovoProduto:()=>void;onAbrirNovoCliente:()=>void}) {
   const{statuses}=useKanbanStatus();const{criarPedido}=usePedidos();const{clientes}=useClientes();
@@ -1119,353 +1184,338 @@ function ModalNovaCompra({onClose}:{onClose:()=>void}) {
   );
 }
 
-/* ── CONFIG ────────────────────────────────────────────────── */
-function ConfigView() {
+/* ── ERRO TABELA (helper component) ───────────────────────── */
+function ErroTabela({tabela}:{tabela:string}) {
   return(
-    <div className="space-y-5 max-w-2xl">
-      <div><h2 className="text-2xl md:text-3xl font-black">Configurações</h2><p className="text-slate-500 text-sm">Acesso e permissões</p></div>
-      <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
-        <div className="p-5 border-b border-slate-100"><h3 className="font-black text-slate-800">Controle de Acesso</h3></div>
-        {[{r:'Administrador',t:'admin',ic:<Shield size={20} className="text-indigo-600"/>,bg:'bg-indigo-50',tbg:'bg-indigo-100 text-indigo-600',p:['CRM/Kanban','Insumos','Clientes','Fornecedores','C. Receber','Compras','C. Pagar','Config'],u:'Admin Point',s:'admin123'},{r:'Colaborador',t:'colaborador',ic:<UserCheck size={20} className="text-emerald-600"/>,bg:'bg-emerald-50',tbg:'bg-emerald-100 text-emerald-600',p:['CRM/Kanban','Clientes','Compras'],u:'Colaborador',s:'colab123'}].map(r=>(
-          <div key={r.t} className="p-5 border-b border-slate-100 flex items-start gap-4">
-            <div className={cn('p-3 rounded-2xl shrink-0',r.bg)}>{r.ic}</div>
-            <div className="flex-1"><div className="flex items-center gap-2 mb-2"><p className="font-black text-slate-800">{r.r}</p><span className={cn('text-[10px] font-black uppercase px-2 py-0.5 rounded-full',r.tbg)}>{r.t}</span></div><div className="flex flex-wrap gap-1.5 mb-2">{r.p.map(p=><span key={p} className="text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full font-medium">{p}</span>)}</div><p className="text-xs text-slate-400 font-mono">Login: <b>{r.u}</b> / Senha: <b>{r.s}</b></p></div>
-          </div>
-        ))}
-      </div>
-      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex gap-3">
-        <AlertTriangle size={15} className="text-amber-500 shrink-0 mt-0.5"/>
-        <p className="text-sm text-amber-700">Para usuários com e-mail/senha próprios, ative o <b>Supabase Auth</b>.</p>
-      </div>
-    </div>
-  );
-}
-
-/* ── MODAL EDITAR CLIENTE ──────────────────────────────────── */
-function ModalEditarCliente({cliente,onClose}:{cliente:any;onClose:()=>void}) {
-  const[form,setForm]=useState({
-    nome:cliente.nome||'', cpf_cnpj:cliente.cpf_cnpj||'', email:cliente.email||'',
-    telefone:cliente.telefone||'', whatsapp:cliente.whatsapp||'',
-    cidade:cliente.cidade||'', estado:cliente.estado||'', observacoes:cliente.observacoes||'',
-  });
-  const[salvando,setSalvando]=useState(false);const[erro,setErro]=useState('');const[toast,setToast]=useState('');
-  const salvar=async()=>{
-    if(!form.nome.trim()){setErro('Nome obrigatório.');return;}
-    setSalvando(true);
-    const{error}=await supabase.from('clientes').update(form).eq('id',cliente.id);
-    if(error){setErro('Erro: '+error.message);setSalvando(false);}
-    else{setToast('Cliente atualizado! ✅');setTimeout(onClose,1500);}
-  };
-  return(<><ModalWrapper title={`Editar Cliente — ${cliente.nome}`} onClose={onClose}>
-    {erro&&<MsgErro msg={erro}/>}
-    <Campo label="Nome *"><input type="text" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} className={inputClass}/></Campo>
-    <div className="grid grid-cols-2 gap-4">
-      <Campo label="CPF / CNPJ"><input type="text" value={form.cpf_cnpj} onChange={e=>setForm({...form,cpf_cnpj:e.target.value})} className={inputClass}/></Campo>
-      <Campo label="WhatsApp"><input type="text" value={form.whatsapp} onChange={e=>setForm({...form,whatsapp:e.target.value})} className={inputClass}/></Campo>
-    </div>
-    <div className="grid grid-cols-2 gap-4">
-      <Campo label="E-mail"><input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} className={inputClass}/></Campo>
-      <Campo label="Telefone"><input type="text" value={form.telefone} onChange={e=>setForm({...form,telefone:e.target.value})} className={inputClass}/></Campo>
-    </div>
-    <div className="grid grid-cols-2 gap-4">
-      <Campo label="Cidade"><input type="text" value={form.cidade} onChange={e=>setForm({...form,cidade:e.target.value})} className={inputClass}/></Campo>
-      <Campo label="Estado"><input type="text" maxLength={2} value={form.estado} onChange={e=>setForm({...form,estado:e.target.value.toUpperCase()})} className={inputClass}/></Campo>
-    </div>
-    <Campo label="Observações"><textarea rows={2} value={form.observacoes} onChange={e=>setForm({...form,observacoes:e.target.value})} className={inputClass+' resize-none'}/></Campo>
-    <BotaoSalvar onClick={salvar} loading={salvando} label="Salvar Alterações"/>
-  </ModalWrapper>
-  <AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
-}
-
-/* ── MODAL PERFIL CLIENTE ──────────────────────────────────── */
-function ModalPerfilCliente({cliente,onClose,onEditar}:{cliente:any;onClose:()=>void;onEditar:(c:any)=>void}) {
-  const[pedidos,setPedidos]=useState<any[]>([]);
-  const[loading,setLoading]=useState(true);
-  useEffect(()=>{
-    supabase.from('pedidos').select('*, kanban_status(nome)')
-      .eq('cliente_id',cliente.id).order('created_at',{ascending:false})
-      .then(({data})=>{setPedidos(data||[]);setLoading(false);});
-  },[cliente.id]);
-  const totalGasto=pedidos.reduce((a,p)=>a+Number(p.valor_total),0);
-  return(
-    <ModalWrapper title={`Perfil — ${cliente.nome}`} onClose={onClose} size="lg">
-      {/* Dados */}
-      <div className="grid grid-cols-2 gap-4 bg-slate-50 rounded-2xl p-4">
-        <div><p className="text-xs text-slate-400 font-bold uppercase mb-1">CPF/CNPJ</p><p className="font-bold text-slate-800 text-sm">{cliente.cpf_cnpj||'—'}</p></div>
-        <div><p className="text-xs text-slate-400 font-bold uppercase mb-1">WhatsApp</p>
-          {cliente.whatsapp
-            ?<a href={`https://wa.me/55${cliente.whatsapp.replace(/\D/g,'')}`} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-emerald-600 font-bold text-sm hover:underline"><MessageSquare size={13}/>{cliente.whatsapp}</a>
-            :<p className="font-bold text-slate-800 text-sm">—</p>}
-        </div>
-        <div><p className="text-xs text-slate-400 font-bold uppercase mb-1">E-mail</p><p className="font-bold text-slate-800 text-sm">{cliente.email||'—'}</p></div>
-        <div><p className="text-xs text-slate-400 font-bold uppercase mb-1">Cidade</p><p className="font-bold text-slate-800 text-sm">{cliente.cidade?`${cliente.cidade}/${cliente.estado||''}`:'—'}</p></div>
-      </div>
-      {/* Resumo financeiro */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="bg-indigo-50 rounded-2xl p-4"><p className="text-xs text-slate-400 font-bold uppercase mb-1">Pedidos</p><p className="text-xl font-black text-indigo-600">{pedidos.length}</p></div>
-        <div className="bg-emerald-50 rounded-2xl p-4"><p className="text-xs text-slate-400 font-bold uppercase mb-1">Total Gasto</p><p className="text-xl font-black text-emerald-600">R$ {totalGasto.toFixed(2)}</p></div>
-        <div className="bg-amber-50 rounded-2xl p-4"><p className="text-xs text-slate-400 font-bold uppercase mb-1">Ticket Médio</p><p className="text-xl font-black text-amber-600">R$ {pedidos.length>0?(totalGasto/pedidos.length).toFixed(2):'0.00'}</p></div>
-      </div>
-      {/* Histórico de pedidos */}
+    <div className="bg-rose-50 border border-rose-200 rounded-2xl p-5 flex items-start gap-4">
+      <AlertTriangle size={22} className="text-rose-500 shrink-0 mt-0.5"/>
       <div>
-        <p className="text-xs font-black text-slate-500 uppercase tracking-wider mb-3">Histórico de Pedidos</p>
-        {loading?<LoadingSpinner label="Carregando..."/>:pedidos.length===0
-          ?<p className="text-center text-slate-400 text-sm py-6">Nenhum pedido encontrado.</p>
-          :<div className="border border-slate-200 rounded-2xl overflow-hidden">
-            <table className="w-full text-sm">
-              <thead><tr className="bg-slate-50 border-b border-slate-100"><th className="px-4 py-3 text-left text-[10px] font-black text-slate-400 uppercase">Código</th><th className="px-4 py-3 text-left text-[10px] font-black text-slate-400 uppercase">Status</th><th className="px-4 py-3 text-right text-[10px] font-black text-slate-400 uppercase">Valor</th><th className="px-4 py-3 text-right text-[10px] font-black text-slate-400 uppercase">Data</th></tr></thead>
-              <tbody className="divide-y divide-slate-100">
-                {pedidos.map(p=>(
-                  <tr key={p.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 font-bold text-indigo-600">#{p.codigo}</td>
-                    <td className="px-4 py-3"><span className="text-[10px] font-black uppercase bg-slate-100 text-slate-600 px-2 py-1 rounded-full">{p.kanban_status?.nome||'—'}</span></td>
-                    <td className="px-4 py-3 text-right font-black text-slate-700">R$ {Number(p.valor_total).toFixed(2)}</td>
-                    <td className="px-4 py-3 text-right text-slate-400">{new Date(p.created_at).toLocaleDateString('pt-BR')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        }
+        <p className="font-black text-rose-700 mb-1">Tabela não encontrada no Supabase</p>
+        <p className="text-rose-600 text-sm mb-2">A tabela <code className="bg-rose-100 px-1.5 py-0.5 rounded font-mono">{tabela}</code> ainda não existe.</p>
+        <p className="text-rose-600 text-sm">Execute o arquivo <code className="bg-rose-100 px-1 rounded font-mono">supabase_novas_tabelas.sql</code> no SQL Editor do Supabase.</p>
       </div>
-    <div className="flex gap-3 pt-2">
-      <button onClick={()=>{onClose();onEditar(cliente);}} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold text-sm shadow-lg transition-all">
-        ✏️ Editar Dados do Cliente
-      </button>
     </div>
-    </ModalWrapper>
   );
 }
 
-/* ── MODAL EDITAR INSUMO ───────────────────────────────────── */
-function ModalEditarInsumo({insumo,onClose}:{insumo:any;onClose:()=>void}) {
+/* ── MODAL EDITAR CONTA A RECEBER ──────────────────────────── */
+function ModalEditarCR({conta,onClose}:{conta:any;onClose:()=>void}) {
   const[form,setForm]=useState({
-    nome:insumo.nome||'', tipo:insumo.tipo||'papel',
-    unidade_medida:insumo.unidade_medida||'unidade',
-    custo_unitario:String(insumo.custo_unitario||0),
-    estoque_atual:String(insumo.estoque_atual||0),
-    estoque_minimo:String(insumo.estoque_minimo||0),
-    gramatura:String(insumo.gramatura||''),
-    observacoes:insumo.observacoes||'',
+    cliente_nome:conta.cliente_nome||'',
+    descricao:conta.descricao||'',
+    valor:String(conta.valor||0),
+    data_vencimento:conta.data_vencimento||'',
+    status:conta.status||'Aguardando',
   });
-  const[salvando,setSalvando]=useState(false);const[erro,setErro]=useState('');const[toast,setToast]=useState('');
+  const[salvando,setSalvando]=useState(false);const[toast,setToast]=useState('');
   const salvar=async()=>{
-    if(!form.nome.trim()){setErro('Nome obrigatório.');return;}
     setSalvando(true);
-    const{error}=await supabase.from('insumos').update({
-      nome:form.nome, tipo:form.tipo, unidade_medida:form.unidade_medida,
-      custo_unitario:Number(form.custo_unitario),
-      estoque_atual:Number(form.estoque_atual),
-      estoque_minimo:Number(form.estoque_minimo),
-      gramatura:form.gramatura?Number(form.gramatura):null,
-      observacoes:form.observacoes||null,
-      updated_at:new Date().toISOString(),
-    }).eq('id',insumo.id);
-    if(error){setErro('Erro: '+error.message);setSalvando(false);}
-    else{setToast('Insumo atualizado! ✅');setTimeout(onClose,1500);}
+    await supabase.from('contas_receber').update({
+      cliente_nome:form.cliente_nome,
+      descricao:form.descricao||null,
+      valor:Number(form.valor),
+      data_vencimento:form.data_vencimento||null,
+      status:form.status,
+      data_recebimento:form.status==='Recebido'?(conta.data_recebimento||new Date().toISOString()):null,
+    }).eq('id',conta.id);
+    setSalvando(false);setToast('Conta atualizada! ✅');setTimeout(onClose,1400);
   };
-  return(<><ModalWrapper title={`Editar Insumo — ${insumo.nome}`} onClose={onClose}>
-    {erro&&<MsgErro msg={erro}/>}
-    <Campo label="Nome *"><input type="text" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} className={inputClass}/></Campo>
+  return(<><ModalWrapper title="Editar Conta a Receber" onClose={onClose}>
+    <Campo label="Cliente"><input type="text" value={form.cliente_nome} onChange={e=>setForm({...form,cliente_nome:e.target.value})} className={inputClass}/></Campo>
+    <Campo label="Descrição"><input type="text" value={form.descricao} onChange={e=>setForm({...form,descricao:e.target.value})} className={inputClass}/></Campo>
     <div className="grid grid-cols-2 gap-4">
-      <Campo label="Tipo">
-        <select value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value})} className={inputClass}>
-          {['papel','tinta','fita','cola','vinil','embalagem','outro'].map(t=><option key={t} value={t}>{t}</option>)}
-        </select>
-      </Campo>
-      <Campo label="Unidade de Medida">
-        <select value={form.unidade_medida} onChange={e=>setForm({...form,unidade_medida:e.target.value})} className={inputClass}>
-          {['folha','ml','metro','unidade','kg','litro'].map(u=><option key={u} value={u}>{u}</option>)}
-        </select>
-      </Campo>
+      <Campo label="Valor (R$)"><input type="number" step="0.01" min="0" value={form.valor} onChange={e=>setForm({...form,valor:e.target.value})} className={inputClass}/></Campo>
+      <Campo label="Data de Vencimento"><input type="date" value={form.data_vencimento} onChange={e=>setForm({...form,data_vencimento:e.target.value})} className={inputClass}/></Campo>
     </div>
-    <div className="grid grid-cols-3 gap-3">
-      <Campo label="Custo Unit. (R$)"><input type="number" step="0.0001" min="0" value={form.custo_unitario} onChange={e=>setForm({...form,custo_unitario:e.target.value})} className={inputClass}/></Campo>
-      <Campo label="Estoque Atual"><input type="number" step="0.01" min="0" value={form.estoque_atual} onChange={e=>setForm({...form,estoque_atual:e.target.value})} className={inputClass}/></Campo>
-      <Campo label="Estoque Mínimo"><input type="number" step="0.01" min="0" value={form.estoque_minimo} onChange={e=>setForm({...form,estoque_minimo:e.target.value})} className={inputClass}/></Campo>
-    </div>
-    <Campo label="Gramatura g/m² (para papéis)"><input type="number" step="0.1" value={form.gramatura} onChange={e=>setForm({...form,gramatura:e.target.value})} className={inputClass}/></Campo>
-    <Campo label="Observações"><textarea rows={2} value={form.observacoes} onChange={e=>setForm({...form,observacoes:e.target.value})} className={inputClass+' resize-none'}/></Campo>
+    <Campo label="Status">
+      <select value={form.status} onChange={e=>setForm({...form,status:e.target.value})} className={inputClass}>
+        {STATUS_CR.map(s=><option key={s} value={s}>{s}</option>)}
+      </select>
+    </Campo>
     <BotaoSalvar onClick={salvar} loading={salvando} label="Salvar Alterações"/>
   </ModalWrapper>
   <AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
 }
 
-/* ── MODAL EDITAR PRODUTO + COMPOSIÇÃO (BOM) ───────────────── */
-function ModalEditarProduto({produto,onClose}:{produto:any;onClose:()=>void}) {
+/* ── MODAL EDITAR CONTA A PAGAR ────────────────────────────── */
+function ModalEditarCP({conta,onClose}:{conta:any;onClose:()=>void}) {
   const[form,setForm]=useState({
-    nome:produto.nome||'', descricao:produto.descricao||'',
-    categoria:produto.categoria||'kit',
-    markup_sugerido:String(produto.markup_sugerido||2.5),
-    custo_mao_obra_hora:String(produto.custo_mao_obra_hora||25),
+    fornecedor_nome:conta.fornecedor_nome||'',
+    descricao:conta.descricao||'',
+    valor:String(conta.valor||0),
+    data_vencimento:conta.data_vencimento||'',
+    status:conta.status||'Aguardando',
   });
-  const[bom,setBom]=useState<any[]>([]);
-  const[insumosList,setInsumosList]=useState<any[]>([]);
-  const[buscaIns,setBuscaIns]=useState('');const[showIns,setShowIns]=useState(false);
-  const insRef=useRef<HTMLDivElement>(null);
-  const[salvando,setSalvando]=useState(false);const[erro,setErro]=useState('');const[toast,setToast]=useState('');
-
-  useEffect(()=>{
-    // Load BOM
-    supabase.from('composicao_produtos').select('*, insumos(nome,unidade_medida), maquinas(nome)')
-      .eq('produto_id',produto.id).then(({data})=>setBom(data||[]));
-    // Load insumos list
-    supabase.from('insumos').select('*').eq('ativo',true).order('nome').then(({data})=>setInsumosList(data||[]));
-  },[produto.id]);
-
-  useEffect(()=>{
-    const h=(e:MouseEvent)=>{if(insRef.current&&!insRef.current.contains(e.target as Node))setShowIns(false);};
-    document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);
-  },[]);
-
-  const insFilt=insumosList.filter(i=>i.nome.toLowerCase().includes(buscaIns.toLowerCase())&&buscaIns.length>0).slice(0,6);
-
-  const addBomItem=(ins:any)=>{
-    setBom(prev=>[...prev,{id:'new-'+crypto.randomUUID(),produto_id:produto.id,insumo_id:ins.id,maquina_id:null,quantidade_insumo:1,percentual_desperdicio:5,tempo_maquina_minutos:0,insumos:{nome:ins.nome,unidade_medida:ins.unidade_medida},_novo:true}]);
-    setBuscaIns('');setShowIns(false);
-  };
-  const updBom=(id:string,k:string,v:any)=>setBom(prev=>prev.map(b=>b.id===id?{...b,[k]:v,_dirty:true}:b));
-  const delBom=async(item:any)=>{
-    if(!item._novo)await supabase.from('composicao_produtos').delete().eq('id',item.id);
-    setBom(prev=>prev.filter(b=>b.id!==item.id));
-  };
-
-  const custoTotal=bom.reduce((a,b)=>{
-    const custo=(insumosList.find(i=>i.id===b.insumo_id)?.custo_unitario||0)*Number(b.quantidade_insumo||0)*(1+Number(b.percentual_desperdicio||0)/100);
-    return a+custo;
-  },0);
-  const precoSugerido=custoTotal*Number(form.markup_sugerido||2.5);
-
+  const[salvando,setSalvando]=useState(false);const[toast,setToast]=useState('');
   const salvar=async()=>{
-    if(!form.nome.trim()){setErro('Nome obrigatório.');return;}
     setSalvando(true);
-    // Update produto
-    await supabase.from('produtos').update({
-      nome:form.nome,descricao:form.descricao||null,categoria:form.categoria,
-      markup_sugerido:Number(form.markup_sugerido),custo_mao_obra_hora:Number(form.custo_mao_obra_hora),
-      updated_at:new Date().toISOString(),
-    }).eq('id',produto.id);
-    // Insert novos itens do BOM
-    const novos=bom.filter(b=>b._novo);
-    if(novos.length>0){
-      await supabase.from('composicao_produtos').insert(novos.map(({id,_novo,_dirty,insumos:ins,...rest})=>rest));
-    }
-    // Update editados
-    const editados=bom.filter(b=>b._dirty&&!b._novo);
-    for(const b of editados){
-      const{_dirty,insumos:ins,...rest}=b;
-      await supabase.from('composicao_produtos').update({quantidade_insumo:rest.quantidade_insumo,percentual_desperdicio:rest.percentual_desperdicio}).eq('id',rest.id);
-    }
-    setSalvando(false);setToast('Produto salvo! ✅');setTimeout(onClose,1500);
+    await supabase.from('contas_pagar').update({
+      fornecedor_nome:form.fornecedor_nome,
+      descricao:form.descricao||null,
+      valor:Number(form.valor),
+      data_vencimento:form.data_vencimento||null,
+      status:form.status,
+      data_pagamento:form.status==='Pago'?(conta.data_pagamento||new Date().toISOString()):null,
+    }).eq('id',conta.id);
+    setSalvando(false);setToast('Conta atualizada! ✅');setTimeout(onClose,1400);
   };
-
-  return(<><ModalWrapper title={`Editar Produto — ${produto.nome}`} onClose={onClose} size="lg">
-    {erro&&<MsgErro msg={erro}/>}
-    {/* Dados básicos */}
-    <Campo label="Nome *"><input type="text" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} className={inputClass}/></Campo>
+  return(<><ModalWrapper title="Editar Conta a Pagar" onClose={onClose}>
+    <Campo label="Fornecedor"><input type="text" value={form.fornecedor_nome} onChange={e=>setForm({...form,fornecedor_nome:e.target.value})} className={inputClass}/></Campo>
     <Campo label="Descrição"><input type="text" value={form.descricao} onChange={e=>setForm({...form,descricao:e.target.value})} className={inputClass}/></Campo>
-    <div className="grid grid-cols-3 gap-3">
-      <Campo label="Categoria">
-        <select value={form.categoria} onChange={e=>setForm({...form,categoria:e.target.value})} className={inputClass}>
-          {['kit','adesivo','impresso','personalizado'].map(c=><option key={c} value={c}>{c}</option>)}
-        </select>
-      </Campo>
-      <Campo label="Markup (×)"><input type="number" step="0.1" min="1" value={form.markup_sugerido} onChange={e=>setForm({...form,markup_sugerido:e.target.value})} className={inputClass}/></Campo>
-      <Campo label="MO/hora (R$)"><input type="number" step="0.5" min="0" value={form.custo_mao_obra_hora} onChange={e=>setForm({...form,custo_mao_obra_hora:e.target.value})} className={inputClass}/></Campo>
+    <div className="grid grid-cols-2 gap-4">
+      <Campo label="Valor (R$)"><input type="number" step="0.01" min="0" value={form.valor} onChange={e=>setForm({...form,valor:e.target.value})} className={inputClass}/></Campo>
+      <Campo label="Data de Vencimento"><input type="date" value={form.data_vencimento} onChange={e=>setForm({...form,data_vencimento:e.target.value})} className={inputClass}/></Campo>
     </div>
+    <Campo label="Status">
+      <select value={form.status} onChange={e=>setForm({...form,status:e.target.value})} className={inputClass}>
+        {STATUS_CP.map(s=><option key={s} value={s}>{s}</option>)}
+      </select>
+    </Campo>
+    <BotaoSalvar onClick={salvar} loading={salvando} label="Salvar Alterações"/>
+  </ModalWrapper>
+  <AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
+}
 
-    {/* BOM - Composição */}
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-black text-slate-500 uppercase tracking-wider">Composição de Insumos (BOM)</p>
-        {custoTotal>0&&<div className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full">Custo: R$ {custoTotal.toFixed(4)} → Venda: R$ {precoSugerido.toFixed(2)}</div>}
-      </div>
-      <div className="relative" ref={insRef}>
-        <input type="text" placeholder="Adicionar insumo à composição..." className={inputClass} value={buscaIns}
-          onChange={e=>{setBuscaIns(e.target.value);setShowIns(true);}} onFocus={()=>setShowIns(true)}/>
-        {showIns&&buscaIns.length>0&&(
-          <div className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">
-            {insFilt.length>0
-              ?insFilt.map(i=><button key={i.id} onClick={()=>addBomItem(i)} className="w-full text-left px-4 py-3 hover:bg-indigo-50 flex items-center justify-between"><div><p className="font-bold text-sm">{i.nome}</p><p className="text-xs text-slate-400">{i.tipo} • R$ {Number(i.custo_unitario).toFixed(4)}/{i.unidade_medida}</p></div><Plus size={14} className="text-indigo-400"/></button>)
-              :<div className="p-4 text-sm text-slate-400">Nenhum insumo encontrado.</div>
-            }
-          </div>
-        )}
-      </div>
-      {bom.length>0?(
-        <div className="border border-slate-200 rounded-2xl overflow-hidden overflow-x-auto">
-          <table className="w-full text-sm min-w-[500px]">
-            <thead><tr className="bg-slate-50 border-b border-slate-100">
-              <th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase">Insumo</th>
-              <th className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 uppercase w-24">Quantidade</th>
-              <th className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 uppercase w-24">Desperdício %</th>
-              <th className="px-3 py-2.5 text-right text-[10px] font-black text-slate-400 uppercase w-28">Custo</th>
-              <th className="w-8"></th>
-            </tr></thead>
-            <tbody className="divide-y divide-slate-100">
-              {bom.map(b=>{
-                const ins=insumosList.find(i=>i.id===b.insumo_id);
-                const custo=(ins?.custo_unitario||0)*Number(b.quantidade_insumo||0)*(1+Number(b.percentual_desperdicio||0)/100);
-                return(
-                  <tr key={b.id}>
-                    <td className="px-3 py-2 font-bold text-sm text-slate-800">{b.insumos?.nome||ins?.nome||'—'}<span className="text-xs text-slate-400 font-normal ml-1">/{b.insumos?.unidade_medida||ins?.unidade_medida}</span></td>
-                    <td className="px-3 py-2"><input type="number" min="0" step="0.001" value={b.quantidade_insumo} onChange={e=>updBom(b.id,'quantidade_insumo',Number(e.target.value))} className="w-full text-center text-sm font-bold bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/></td>
-                    <td className="px-3 py-2"><input type="number" min="0" max="100" step="0.5" value={b.percentual_desperdicio} onChange={e=>updBom(b.id,'percentual_desperdicio',Number(e.target.value))} className="w-full text-center text-sm font-bold bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/></td>
-                    <td className="px-3 py-2 text-right font-black text-indigo-600 text-sm">R$ {custo.toFixed(4)}</td>
-                    <td className="px-3 py-2"><button onClick={()=>delBom(b)} className="text-slate-300 hover:text-rose-500"><Trash2 size={13}/></button></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot><tr className="bg-indigo-50 border-t-2 border-indigo-100">
-              <td colSpan={3} className="px-3 py-3 text-right font-black text-slate-600 text-sm uppercase">Custo Total:</td>
-              <td className="px-3 py-3 text-right font-black text-indigo-700">R$ {custoTotal.toFixed(4)}</td>
-              <td></td>
-            </tr></tfoot>
-          </table>
+/* ── CONTROLE DE CAIXA ─────────────────────────────────────── */
+const CAT_CREDITO=['Venda','Recebimento','Aporte','Outros'];
+const CAT_DEBITO=['Aluguel','Salário','Material','Energia','Internet','Manutenção','Impostos','Outros'];
+
+function CaixaView({onNovo,onLancado}:{onNovo:()=>void;onLancado:()=>void}) {
+  const[lancamentos,setLancamentos]=useState<any[]>([]);
+  const[loading,setLoading]=useState(true);
+  const[erroTabela,setErroTabela]=useState(false);
+  const[filtroMes,setFiltroMes]=useState(new Date().toISOString().slice(0,7));
+  const load=useCallback(async()=>{
+    setLoading(true);setErroTabela(false);
+    const{data,error}=await supabase.from('caixa').select('*').order('data',{ascending:false});
+    if(error){setErroTabela(true);}else setLancamentos(data||[]);
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  const filtrados=lancamentos.filter(l=>l.data?.startsWith(filtroMes));
+  const totalCredito=filtrados.filter(l=>l.tipo==='credito').reduce((a,l)=>a+Number(l.valor),0);
+  const totalDebito=filtrados.filter(l=>l.tipo==='debito').reduce((a,l)=>a+Number(l.valor),0);
+  const saldo=totalCredito-totalDebito;
+
+  if(loading)return<LoadingSpinner label="Carregando caixa..."/>;
+  return(
+    <div className="space-y-5">
+      <div className="flex justify-between items-end flex-wrap gap-3">
+        <div><h2 className="text-2xl md:text-3xl font-black">Controle de Caixa</h2><p className="text-slate-500 text-sm">Lançamentos manuais de créditos e débitos</p></div>
+        <div className="flex gap-2">
+          <input type="month" value={filtroMes} onChange={e=>setFiltroMes(e.target.value)} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-500"/>
+          <button onClick={load} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl" title="Atualizar"><RefreshCw size={17}/></button>
+          <button onClick={onNovo} className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Lançamento</button>
         </div>
-      ):(
-        <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center text-slate-400 text-sm">
-          Busque insumos acima para montar a composição deste produto
+      </div>
+      {erroTabela&&<ErroTabela tabela="caixa"/>}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase mb-1">Entradas</p><p className="text-2xl font-black text-emerald-600">R$ {totalCredito.toFixed(2)}</p></div>
+        <div className="bg-rose-50 border border-rose-100 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase mb-1">Saídas</p><p className="text-2xl font-black text-rose-600">R$ {totalDebito.toFixed(2)}</p></div>
+        <div className={cn('border rounded-2xl p-5',saldo>=0?'bg-indigo-50 border-indigo-100':'bg-rose-50 border-rose-100')}>
+          <p className="text-xs font-black text-slate-400 uppercase mb-1">Saldo do Período</p>
+          <p className={cn('text-2xl font-black',saldo>=0?'text-indigo-600':'text-rose-600')}>R$ {saldo.toFixed(2)}</p>
+        </div>
+      </div>
+      {!erroTabela&&filtrados.length===0&&<div className="bg-white rounded-3xl border border-slate-200 p-16 flex flex-col items-center gap-4 text-slate-300"><DollarSign size={48}/><p className="font-black text-slate-400 text-lg uppercase tracking-widest">Nenhum lançamento</p><p className="text-slate-400 text-sm">Clique em "Novo Lançamento" para registrar.</p></div>}
+      {filtrados.length>0&&(
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
+          <table className="w-full text-left min-w-[600px]">
+            <thead><tr className="bg-slate-50 border-b border-slate-100">{['Data','Tipo','Categoria','Descrição','Valor',''].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {filtrados.map(l=>(
+                <tr key={l.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-5 py-4 text-sm text-slate-500">{l.data?new Date(l.data+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</td>
+                  <td className="px-5 py-4"><span className={cn('text-[10px] font-black uppercase px-2.5 py-1 rounded-full',l.tipo==='credito'?'bg-emerald-100 text-emerald-700':'bg-rose-100 text-rose-700')}>{l.tipo==='credito'?'Crédito':'Débito'}</span></td>
+                  <td className="px-5 py-4 text-sm text-slate-500">{l.categoria}</td>
+                  <td className="px-5 py-4 text-sm text-slate-700 font-medium max-w-[200px] truncate">{l.descricao}</td>
+                  <td className={cn('px-5 py-4 font-black text-sm',l.tipo==='credito'?'text-emerald-600':'text-rose-600')}>{l.tipo==='credito'?'+':'−'} R$ {Number(l.valor).toFixed(2)}</td>
+                  <td className="px-5 py-4">
+                    <button onClick={async()=>{if(confirm('Excluir este lançamento?')){await supabase.from('caixa').delete().eq('id',l.id);load();}}} className="text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={14}/></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
-    <BotaoSalvar onClick={salvar} loading={salvando} label="Salvar Produto e Composição"/>
+  );
+}
+
+/* ── MODAL NOVO LANÇAMENTO DE CAIXA ────────────────────────── */
+function ModalNovoLancamentoCaixa({onClose}:{onClose:()=>void}) {
+  const[form,setForm]=useState({tipo:'credito',categoria:'Outros',descricao:'',valor:'',data:new Date().toISOString().split('T')[0],observacoes:''});
+  const[salvando,setSalvando]=useState(false);const[erro,setErro]=useState('');const[toast,setToast]=useState('');
+  const categorias=form.tipo==='credito'?CAT_CREDITO:CAT_DEBITO;
+  const salvar=async()=>{
+    if(!form.descricao.trim()){setErro('Descrição obrigatória.');return;}
+    if(!form.valor||Number(form.valor)<=0){setErro('Valor deve ser maior que zero.');return;}
+    setSalvando(true);
+    const{error}=await supabase.from('caixa').insert({tipo:form.tipo,categoria:form.categoria,descricao:form.descricao,valor:Number(form.valor),data:form.data,observacoes:form.observacoes||null});
+    if(error){setErro('Erro: '+error.message);setSalvando(false);}
+    else{setToast(form.tipo==='credito'?'Crédito lançado! ✅':'Débito lançado! ✅');setTimeout(onClose,1400);}
+  };
+  return(<><ModalWrapper title="Novo Lançamento de Caixa" onClose={onClose}>
+    {erro&&<MsgErro msg={erro}/>}
+    <div className="grid grid-cols-2 gap-3">
+      <button onClick={()=>setForm({...form,tipo:'credito',categoria:'Outros'})} className={cn('py-4 rounded-2xl font-black text-sm transition-all flex flex-col items-center gap-1',form.tipo==='credito'?'bg-emerald-600 text-white shadow-lg':'bg-slate-100 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600')}>
+        <TrendingUp size={22}/> CRÉDITO (Entrada)
+      </button>
+      <button onClick={()=>setForm({...form,tipo:'debito',categoria:'Outros'})} className={cn('py-4 rounded-2xl font-black text-sm transition-all flex flex-col items-center gap-1',form.tipo==='debito'?'bg-rose-600 text-white shadow-lg':'bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600')}>
+        <TrendingDown size={22}/> DÉBITO (Saída)
+      </button>
+    </div>
+    <div className="grid grid-cols-2 gap-4">
+      <Campo label="Categoria">
+        <select value={form.categoria} onChange={e=>setForm({...form,categoria:e.target.value})} className={inputClass}>
+          {categorias.map(c=><option key={c} value={c}>{c}</option>)}
+        </select>
+      </Campo>
+      <Campo label="Data"><input type="date" value={form.data} onChange={e=>setForm({...form,data:e.target.value})} className={inputClass}/></Campo>
+    </div>
+    <Campo label="Descrição *"><input type="text" placeholder="Ex: Pagamento de aluguel, Recebimento cliente..." value={form.descricao} onChange={e=>setForm({...form,descricao:e.target.value})} className={inputClass}/></Campo>
+    <Campo label="Valor (R$) *"><input type="number" step="0.01" min="0.01" placeholder="0,00" value={form.valor} onChange={e=>setForm({...form,valor:e.target.value})} className={inputClass}/></Campo>
+    <Campo label="Observações"><textarea rows={2} value={form.observacoes} onChange={e=>setForm({...form,observacoes:e.target.value})} className={inputClass+' resize-none'}/></Campo>
+    <BotaoSalvar onClick={salvar} loading={salvando} label={form.tipo==='credito'?'Lançar Crédito':'Lançar Débito'}/>
   </ModalWrapper>
   <AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
 }
 
-/* ── MODAL EDITAR FORNECEDOR ──────────────────────────────── */
-function ModalEditarFornecedor({fornecedor,onClose}:{fornecedor:any;onClose:()=>void}) {
-  const[form,setForm]=useState({
-    nome:fornecedor.nome||'', cnpj:fornecedor.cnpj||'', contato:fornecedor.contato||'',
-    telefone:fornecedor.telefone||'', whatsapp:fornecedor.whatsapp||'',
-    email:fornecedor.email||'', cidade:fornecedor.cidade||'', observacoes:fornecedor.observacoes||'',
-  });
+/* ── CONFIG ────────────────────────────────────────────────── */
+function ConfigView({onNovoUsuario,onEditarUsuario}:{onNovoUsuario:()=>void;onEditarUsuario:(u:any)=>void}) {
+  const[usuarios,setUsuarios]=useState<any[]>([]);
+  const[loading,setLoading]=useState(true);
+  const[erroTabela,setErroTabela]=useState(false);
+  const load=useCallback(async()=>{
+    setLoading(true);setErroTabela(false);
+    const{data,error}=await supabase.from('usuarios_sistema').select('*').order('nome');
+    if(error){setErroTabela(true);}else setUsuarios(data||[]);
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  const toggleAtivo=async(u:any)=>{
+    await supabase.from('usuarios_sistema').update({ativo:!u.ativo}).eq('id',u.id);
+    load();
+  };
+
+  return(
+    <div className="space-y-6 max-w-3xl">
+      <div><h2 className="text-2xl md:text-3xl font-black">Configurações</h2><p className="text-slate-500 text-sm">Gerenciamento de usuários e acessos</p></div>
+
+      {/* Usuários */}
+      <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
+        <div className="p-5 border-b border-slate-100 flex justify-between items-center">
+          <div><h3 className="font-black text-slate-800">Usuários do Sistema</h3><p className="text-xs text-slate-400 mt-0.5">Login por e-mail e senha</p></div>
+          <button onClick={onNovoUsuario} className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg hover:bg-indigo-700 transition-all"><Plus size={14} strokeWidth={3}/>Novo Usuário</button>
+        </div>
+        {erroTabela&&<div className="p-4"><ErroTabela tabela="usuarios_sistema"/></div>}
+        {loading?<div className="p-8"><LoadingSpinner label="Carregando..."/></div>:(
+          <div className="divide-y divide-slate-100">
+            {usuarios.length===0&&<p className="text-center text-slate-400 text-sm py-8">Nenhum usuário. Execute o SQL para criar a tabela.</p>}
+            {usuarios.map(u=>(
+              <div key={u.id} className="p-5 flex items-center gap-4">
+                <div className={cn('w-10 h-10 rounded-full flex items-center justify-center font-black text-sm shrink-0',u.role==='admin'?'bg-indigo-100 text-indigo-600':'bg-emerald-100 text-emerald-600')}>{u.nome.charAt(0).toUpperCase()}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-black text-slate-800">{u.nome}</p>
+                    <span className={cn('text-[10px] font-black uppercase px-2 py-0.5 rounded-full',u.role==='admin'?'bg-indigo-100 text-indigo-600':'bg-emerald-100 text-emerald-600')}>{u.role}</span>
+                    {!u.ativo&&<span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-400">Inativo</span>}
+                  </div>
+                  <p className="text-sm text-slate-400 font-medium">{u.email}</p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button onClick={()=>onEditarUsuario(u)} className="text-indigo-600 font-bold text-sm hover:underline px-2">Editar</button>
+                  <button onClick={()=>toggleAtivo(u)} className={cn('text-sm font-bold px-2',u.ativo?'text-slate-400 hover:text-rose-500':'text-emerald-600 hover:text-emerald-700')}>{u.ativo?'Desativar':'Ativar'}</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Níveis de acesso */}
+      <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
+        <div className="p-5 border-b border-slate-100"><h3 className="font-black text-slate-800">Níveis de Acesso</h3></div>
+        {[{r:'Administrador',t:'admin',ic:<Shield size={18} className="text-indigo-600"/>,bg:'bg-indigo-50',p:['CRM/Kanban','Insumos','Produtos','Clientes','Fornecedores','Vendas','C.Receber','Compras','C.Pagar','Caixa','Config']},{r:'Colaborador',t:'colaborador',ic:<UserCheck size={18} className="text-emerald-600"/>,bg:'bg-emerald-50',p:['CRM/Kanban','Clientes','Compras']}].map(r=>(
+          <div key={r.t} className="p-5 border-b border-slate-100 flex items-start gap-4 last:border-0">
+            <div className={cn('p-2.5 rounded-xl shrink-0',r.bg)}>{r.ic}</div>
+            <div><div className="flex items-center gap-2 mb-2"><p className="font-black text-slate-800 text-sm">{r.r}</p><span className="text-[10px] font-black uppercase bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{r.t}</span></div><div className="flex flex-wrap gap-1.5">{r.p.map(p=><span key={p} className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-full font-medium">{p}</span>)}</div></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── MODAL NOVO USUÁRIO ────────────────────────────────────── */
+function ModalNovoUsuario({onClose}:{onClose:()=>void}) {
+  const[form,setForm]=useState({nome:'',email:'',senha:'',role:'colaborador'});
+  const[ver,setVer]=useState(false);
   const[salvando,setSalvando]=useState(false);const[erro,setErro]=useState('');const[toast,setToast]=useState('');
   const salvar=async()=>{
-    if(!form.nome.trim()){setErro('Nome obrigatório.');return;}
+    if(!form.nome.trim()||!form.email.trim()||!form.senha.trim()){setErro('Todos os campos são obrigatórios.');return;}
+    if(!form.email.includes('@')){setErro('E-mail inválido.');return;}
+    if(form.senha.length<6){setErro('Senha deve ter ao menos 6 caracteres.');return;}
     setSalvando(true);
-    const{error}=await supabase.from('fornecedores').update(form).eq('id',fornecedor.id);
-    if(error){setErro('Erro: '+error.message);setSalvando(false);}
-    else{setToast('Fornecedor atualizado! ✅');setTimeout(onClose,1500);}
+    const{error}=await supabase.from('usuarios_sistema').insert({nome:form.nome,email:form.email.toLowerCase(),senha_hash:form.senha,role:form.role,ativo:true});
+    if(error){setErro(error.message.includes('unique')?'E-mail já cadastrado.':'Erro: '+error.message);setSalvando(false);}
+    else{setToast('Usuário criado! ✅');setTimeout(onClose,1400);}
   };
-  return(<><ModalWrapper title={`Editar Fornecedor — ${fornecedor.nome}`} onClose={onClose}>
+  return(<><ModalWrapper title="Novo Usuário" onClose={onClose}>
     {erro&&<MsgErro msg={erro}/>}
-    <Campo label="Nome da Empresa *"><input type="text" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} className={inputClass}/></Campo>
-    <div className="grid grid-cols-2 gap-4">
-      <Campo label="CNPJ"><input type="text" value={form.cnpj} onChange={e=>setForm({...form,cnpj:e.target.value})} className={inputClass}/></Campo>
-      <Campo label="Nome do Contato"><input type="text" value={form.contato} onChange={e=>setForm({...form,contato:e.target.value})} className={inputClass}/></Campo>
-    </div>
-    <div className="grid grid-cols-2 gap-4">
-      <Campo label="WhatsApp"><input type="text" value={form.whatsapp} onChange={e=>setForm({...form,whatsapp:e.target.value})} className={inputClass}/></Campo>
-      <Campo label="Telefone"><input type="text" value={form.telefone} onChange={e=>setForm({...form,telefone:e.target.value})} className={inputClass}/></Campo>
-    </div>
-    <div className="grid grid-cols-2 gap-4">
-      <Campo label="E-mail"><input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} className={inputClass}/></Campo>
-      <Campo label="Cidade"><input type="text" value={form.cidade} onChange={e=>setForm({...form,cidade:e.target.value})} className={inputClass}/></Campo>
-    </div>
-    <Campo label="Observações"><textarea rows={2} value={form.observacoes} onChange={e=>setForm({...form,observacoes:e.target.value})} className={inputClass+' resize-none'}/></Campo>
+    <Campo label="Nome completo *"><input type="text" placeholder="Ex: João Silva" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} className={inputClass}/></Campo>
+    <Campo label="E-mail *"><input type="email" placeholder="joao@empresa.com" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} className={inputClass}/></Campo>
+    <Campo label="Senha *">
+      <div className="relative">
+        <input type={ver?'text':'password'} placeholder="Mínimo 6 caracteres" value={form.senha} onChange={e=>setForm({...form,senha:e.target.value})} className={inputClass+' pr-10'}/>
+        <button onClick={()=>setVer(!ver)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600">{ver?<EyeOff size={16}/>:<Eye size={16}/>}</button>
+      </div>
+    </Campo>
+    <Campo label="Nível de Acesso">
+      <select value={form.role} onChange={e=>setForm({...form,role:e.target.value})} className={inputClass}>
+        <option value="colaborador">Colaborador — Orçamentos e Compras</option>
+        <option value="admin">Administrador — Acesso total</option>
+      </select>
+    </Campo>
+    <BotaoSalvar onClick={salvar} loading={salvando} label="Criar Usuário"/>
+  </ModalWrapper>
+  <AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
+}
+
+/* ── MODAL EDITAR USUÁRIO ──────────────────────────────────── */
+function ModalEditarUsuario({usuario,onClose}:{usuario:any;onClose:()=>void}) {
+  const[form,setForm]=useState({nome:usuario.nome||'',email:usuario.email||'',senha:'',role:usuario.role||'colaborador'});
+  const[ver,setVer]=useState(false);
+  const[salvando,setSalvando]=useState(false);const[erro,setErro]=useState('');const[toast,setToast]=useState('');
+  const salvar=async()=>{
+    if(!form.nome.trim()||!form.email.trim()){setErro('Nome e e-mail são obrigatórios.');return;}
+    if(form.senha&&form.senha.length<6){setErro('Nova senha deve ter ao menos 6 caracteres.');return;}
+    setSalvando(true);
+    const upd:any={nome:form.nome,email:form.email.toLowerCase(),role:form.role};
+    if(form.senha)upd.senha_hash=form.senha;
+    const{error}=await supabase.from('usuarios_sistema').update(upd).eq('id',usuario.id);
+    if(error){setErro('Erro: '+error.message);setSalvando(false);}
+    else{setToast('Usuário atualizado! ✅');setTimeout(onClose,1400);}
+  };
+  return(<><ModalWrapper title={`Editar — ${usuario.nome}`} onClose={onClose}>
+    {erro&&<MsgErro msg={erro}/>}
+    <Campo label="Nome completo *"><input type="text" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} className={inputClass}/></Campo>
+    <Campo label="E-mail *"><input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} className={inputClass}/></Campo>
+    <Campo label="Nova senha (deixe em branco para manter)">
+      <div className="relative">
+        <input type={ver?'text':'password'} placeholder="Nova senha (opcional)" value={form.senha} onChange={e=>setForm({...form,senha:e.target.value})} className={inputClass+' pr-10'}/>
+        <button onClick={()=>setVer(!ver)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600">{ver?<EyeOff size={16}/>:<Eye size={16}/>}</button>
+      </div>
+    </Campo>
+    <Campo label="Nível de Acesso">
+      <select value={form.role} onChange={e=>setForm({...form,role:e.target.value})} className={inputClass}>
+        <option value="colaborador">Colaborador — Orçamentos e Compras</option>
+        <option value="admin">Administrador — Acesso total</option>
+      </select>
+    </Campo>
     <BotaoSalvar onClick={salvar} loading={salvando} label="Salvar Alterações"/>
   </ModalWrapper>
   <AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
