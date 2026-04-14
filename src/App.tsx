@@ -14,7 +14,7 @@ import { supabase } from './lib/supabase';
 import type { Pedido, Cliente, Produto, Compra } from './lib/supabase';
 
 /* ── TIPOS ─────────────────────────────────────────────────── */
-type ModalType = 'pedido'|'cliente'|'fornecedor'|'compra'|'novoProduto'|'novoClienteRapido'|'detalheOrc'|'detalheCompra'|'editarCliente'|'editarInsumo'|'editarProduto'|'perfilCliente'|null;
+type ModalType = 'pedido'|'cliente'|'fornecedor'|'compra'|'novoProduto'|'novoClienteRapido'|'detalheOrc'|'detalheCompra'|'editarCliente'|'editarInsumo'|'editarProduto'|'perfilCliente'|'editarFornecedor'|null;
 type UserRole = 'admin'|'colaborador';
 interface AppUser { nome:string; role:UserRole; }
 
@@ -91,6 +91,7 @@ export default function App() {
   const[pedidoSelecionado,setPedidoSelecionado]=useState<Pedido|null>(null);
   const[compraSelecionada,setCompraSelecionada]=useState<Compra|null>(null);
   const[clienteSelecionadoEdit,setClienteSelecionadoEdit]=useState<any|null>(null);
+  const[fornecedorSelecionadoEdit,setFornecedorSelecionadoEdit]=useState<any|null>(null);
   const[insumoSelecionadoEdit,setInsumoSelecionadoEdit]=useState<any|null>(null);
   const[produtoSelecionadoEdit,setProdutoSelecionadoEdit]=useState<any|null>(null);
 
@@ -126,6 +127,7 @@ export default function App() {
 
   const abrirDetalheOrc=(p:Pedido)=>{setPedidoSelecionado(p);setModal('detalheOrc');};
   const abrirEditarCliente=(c:any)=>{setClienteSelecionadoEdit(c);setModal('editarCliente');};
+  const abrirEditarFornecedor=(f:any)=>{setFornecedorSelecionadoEdit(f);setModal('editarFornecedor');};
   const abrirEditarInsumo=(i:any)=>{setInsumoSelecionadoEdit(i);setModal('editarInsumo');};
   const abrirEditarProduto=(p:any)=>{setProdutoSelecionadoEdit(p);setModal('editarProduto');};
   const abrirPerfilCliente=(c:any)=>{setClienteSelecionadoEdit(c);setModal('perfilCliente');};
@@ -192,7 +194,7 @@ export default function App() {
                 {activeTab==='insumos'      && <InsumosView      searchQuery={searchQuery} onEditar={abrirEditarInsumo}/>}
                 {activeTab==='produtos'     && <ProdutosView     searchQuery={searchQuery} onAdd={()=>setModal('novoProduto')} onEditar={abrirEditarProduto}/>}
                 {activeTab==='clientes'     && <ClientesView     searchQuery={searchQuery} onAdd={()=>setModal('cliente')} onVerPerfil={abrirPerfilCliente}/>}
-                {activeTab==='fornecedores' && <FornecedoresView searchQuery={searchQuery} onAdd={()=>setModal('fornecedor')}/>}
+                {activeTab==='fornecedores' && <FornecedoresView searchQuery={searchQuery} onAdd={()=>setModal('fornecedor')} onEditar={abrirEditarFornecedor}/>}
                 {activeTab==='vendas'       && <VendasView/>}
                 {activeTab==='contasreceber'&& <ContasReceberView key={kanbanKey}/>}
                 {activeTab==='compras'      && <ComprasView      key={comprasKey} searchQuery={searchQuery} onAdd={()=>setModal('compra')} onAbrirDetalhe={abrirDetalheCompra}/>}
@@ -213,9 +215,10 @@ export default function App() {
           {modal==='detalheOrc'      && pedidoSelecionado     && <ModalDetalheOrcamento pedido={pedidoSelecionado}   onClose={closeDetalheOrc}/>}
           {modal==='detalheCompra'   && compraSelecionada     && <ModalDetalheCompra    compra={compraSelecionada}   onClose={closeDetalheCompra}/>}
           {modal==='editarCliente'   && clienteSelecionadoEdit && <ModalEditarCliente   cliente={clienteSelecionadoEdit} onClose={()=>{setModal(null);setClienteSelecionadoEdit(null);setKanbanKey(k=>k+1);}}/>}
-          {modal==='perfilCliente'   && clienteSelecionadoEdit && <ModalPerfilCliente   cliente={clienteSelecionadoEdit} onClose={()=>{setModal(null);setClienteSelecionadoEdit(null);}}/>}
+          {modal==='perfilCliente'   && clienteSelecionadoEdit && <ModalPerfilCliente   cliente={clienteSelecionadoEdit} onClose={()=>{setModal(null);setClienteSelecionadoEdit(null);}} onEditar={(c)=>{setModal(null);setTimeout(()=>abrirEditarCliente(c),100);}}/>}
           {modal==='editarInsumo'    && insumoSelecionadoEdit  && <ModalEditarInsumo    insumo={insumoSelecionadoEdit}   onClose={()=>{setModal(null);setInsumoSelecionadoEdit(null);setKanbanKey(k=>k+1);}}/>}
-          {modal==='editarProduto'   && produtoSelecionadoEdit && <ModalEditarProduto   produto={produtoSelecionadoEdit} onClose={()=>{setModal(null);setProdutoSelecionadoEdit(null);setKanbanKey(k=>k+1);}}/>}
+          {modal==='editarProduto'   && produtoSelecionadoEdit   && <ModalEditarProduto   produto={produtoSelecionadoEdit}   onClose={()=>{setModal(null);setProdutoSelecionadoEdit(null);setKanbanKey(k=>k+1);}}/>}
+          {modal==='editarFornecedor'&& fornecedorSelecionadoEdit && <ModalEditarFornecedor fornecedor={fornecedorSelecionadoEdit} onClose={()=>{setModal(null);setFornecedorSelecionadoEdit(null);setKanbanKey(k=>k+1);}}/>}
         </AnimatePresence>
       </div>
     </AuthCtx.Provider>
@@ -523,9 +526,9 @@ function InsumosView({searchQuery,onEditar}:{searchQuery:string;onEditar:(i:any)
       {insumosAbaixoMinimo.length>0&&<div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-start gap-3"><AlertTriangle size={17} className="text-rose-500 mt-0.5 shrink-0"/><div><p className="font-bold text-rose-700 text-sm">Estoque Baixo</p><p className="text-rose-600 text-sm">{insumosAbaixoMinimo.map(i=>i.nome).join(', ')}</p></div></div>}
       <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
         <table className="w-full text-left min-w-[650px]">
-          <thead><tr className="bg-slate-50 border-b border-slate-100">{['Insumo','Tipo','Unidade','Custo Unit.','Estoque','Mínimo','Status'].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
+          <thead><tr className="bg-slate-50 border-b border-slate-100">{['Insumo','Tipo','Unidade','Custo Unit.','Estoque','Mínimo','Status','Ações'].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-slate-100">
-            {insumos.length===0&&<tr><td colSpan={7} className="px-5 py-10 text-center text-slate-400">Nenhum insumo.</td></tr>}
+            {insumos.length===0&&<tr><td colSpan={7} className="px-5 py-10 text-center text-slate-400" colSpan={8}>Nenhum insumo.</td></tr>}
             {insumos.map(i=>{const b=i.estoque_atual<=i.estoque_minimo;return(
               <tr key={i.id} className="hover:bg-slate-50 transition-colors">
                 <td className="px-5 py-4 font-bold text-slate-800 text-sm">{i.nome}</td>
@@ -535,6 +538,7 @@ function InsumosView({searchQuery,onEditar}:{searchQuery:string;onEditar:(i:any)
                 <td className={cn('px-5 py-4 font-black text-sm',b?'text-rose-600':'text-slate-700')}>{Number(i.estoque_atual).toFixed(2)}</td>
                 <td className="px-5 py-4 text-sm text-slate-500">{Number(i.estoque_minimo).toFixed(2)}</td>
                 <td className="px-5 py-4">{b?<span className="flex items-center gap-1 text-rose-600 text-xs font-bold"><AlertCircle size={13}/>Repor</span>:<span className="flex items-center gap-1 text-emerald-600 text-xs font-bold"><CheckCircle2 size={13}/>OK</span>}</td>
+                <td className="px-5 py-4"><button onClick={()=>onEditar(i)} className="text-indigo-600 font-bold text-sm hover:underline">Editar</button></td>
               </tr>
             );})}
           </tbody>
@@ -587,7 +591,7 @@ function ProdutosView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=
                   <td className="px-5 py-4"><span className="text-[10px] font-black uppercase bg-indigo-50 text-indigo-600 px-2 py-1 rounded-full">{p.categoria}</span></td>
                   <td className="px-5 py-4 font-bold text-slate-700 text-sm">{p.markup_sugerido}×</td>
                   <td className="px-5 py-4 font-bold text-slate-700 text-sm">R$ {Number(p.custo_mao_obra_hora).toFixed(2)}/h</td>
-                  <td className="px-5 py-4"><button onClick={()=>onEditar(i)} className="text-indigo-600 font-bold text-sm hover:underline">Editar</button></td>
+                  <td className="px-5 py-4"><button onClick={()=>onEditar(p)} className="text-indigo-600 font-bold text-sm hover:underline">Editar / Composição</button></td>
                 </tr>
               ))}
             </tbody>
@@ -678,7 +682,7 @@ function ClientesView({searchQuery,onAdd,onVerPerfil}:{searchQuery:string;onAdd:
 }
 
 /* ── FORNECEDORES ──────────────────────────────────────────── */
-function FornecedoresView({searchQuery,onAdd}:{searchQuery:string;onAdd:()=>void}) {
+function FornecedoresView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=>void;onEditar:(f:any)=>void}) {
   const{fornecedores,loading}=useFornecedores(searchQuery);
   if(loading)return<LoadingSpinner label="Carregando fornecedores..."/>;
   return(
@@ -698,7 +702,7 @@ function FornecedoresView({searchQuery,onAdd}:{searchQuery:string;onAdd:()=>void
                 <td className="px-6 py-4 text-sm text-slate-500">{f.cnpj||'—'}</td>
                 <td className="px-6 py-4 text-sm text-slate-500">{f.contato||'—'}</td>
                 <td className="px-6 py-4">{f.whatsapp?<a href={`https://wa.me/55${f.whatsapp.replace(/\D/g,'')}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-emerald-600 font-bold text-sm hover:underline"><MessageSquare size={13}/>{f.whatsapp}</a>:<span className="text-slate-300 text-sm">—</span>}</td>
-                <td className="px-6 py-4"><button className="text-indigo-600 font-bold text-sm hover:underline">Editar</button></td>
+                <td className="px-6 py-4"><button onClick={()=>onEditar(f)} className="text-indigo-600 font-bold text-sm hover:underline">Editar</button></td>
               </tr>
             ))}
           </tbody>
@@ -856,7 +860,10 @@ function ContasReceberView() {
   if(loading)return<LoadingSpinner label="Carregando contas a receber..."/>;
   return(
     <div className="space-y-5">
-      <div><h2 className="text-2xl md:text-3xl font-black">Contas a Receber</h2><p className="text-slate-500 text-sm">Gerado automaticamente ao transformar orçamentos em vendas</p></div>
+      <div className="flex justify-between items-end flex-wrap gap-3">
+        <div><h2 className="text-2xl md:text-3xl font-black">Contas a Receber</h2><p className="text-slate-500 text-sm">Gerado ao transformar orçamentos em vendas</p></div>
+        <button onClick={load} className="flex items-center gap-2 p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all" title="Atualizar"><RefreshCw size={17}/></button>
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">A Receber</p><p className="text-2xl font-black text-amber-600">R$ {total.toFixed(2)}</p></div>
         <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Recebido</p><p className="text-2xl font-black text-emerald-600">R$ {recebido.toFixed(2)}</p></div>
@@ -1171,7 +1178,7 @@ function ModalEditarCliente({cliente,onClose}:{cliente:any;onClose:()=>void}) {
 }
 
 /* ── MODAL PERFIL CLIENTE ──────────────────────────────────── */
-function ModalPerfilCliente({cliente,onClose}:{cliente:any;onClose:()=>void}) {
+function ModalPerfilCliente({cliente,onClose,onEditar}:{cliente:any;onClose:()=>void;onEditar:(c:any)=>void}) {
   const[pedidos,setPedidos]=useState<any[]>([]);
   const[loading,setLoading]=useState(true);
   useEffect(()=>{
@@ -1221,6 +1228,11 @@ function ModalPerfilCliente({cliente,onClose}:{cliente:any;onClose:()=>void}) {
           </div>
         }
       </div>
+    <div className="flex gap-3 pt-2">
+      <button onClick={()=>{onClose();onEditar(cliente);}} className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold text-sm shadow-lg transition-all">
+        ✏️ Editar Dados do Cliente
+      </button>
+    </div>
     </ModalWrapper>
   );
 }
@@ -1419,6 +1431,42 @@ function ModalEditarProduto({produto,onClose}:{produto:any;onClose:()=>void}) {
       )}
     </div>
     <BotaoSalvar onClick={salvar} loading={salvando} label="Salvar Produto e Composição"/>
+  </ModalWrapper>
+  <AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
+}
+
+/* ── MODAL EDITAR FORNECEDOR ──────────────────────────────── */
+function ModalEditarFornecedor({fornecedor,onClose}:{fornecedor:any;onClose:()=>void}) {
+  const[form,setForm]=useState({
+    nome:fornecedor.nome||'', cnpj:fornecedor.cnpj||'', contato:fornecedor.contato||'',
+    telefone:fornecedor.telefone||'', whatsapp:fornecedor.whatsapp||'',
+    email:fornecedor.email||'', cidade:fornecedor.cidade||'', observacoes:fornecedor.observacoes||'',
+  });
+  const[salvando,setSalvando]=useState(false);const[erro,setErro]=useState('');const[toast,setToast]=useState('');
+  const salvar=async()=>{
+    if(!form.nome.trim()){setErro('Nome obrigatório.');return;}
+    setSalvando(true);
+    const{error}=await supabase.from('fornecedores').update(form).eq('id',fornecedor.id);
+    if(error){setErro('Erro: '+error.message);setSalvando(false);}
+    else{setToast('Fornecedor atualizado! ✅');setTimeout(onClose,1500);}
+  };
+  return(<><ModalWrapper title={`Editar Fornecedor — ${fornecedor.nome}`} onClose={onClose}>
+    {erro&&<MsgErro msg={erro}/>}
+    <Campo label="Nome da Empresa *"><input type="text" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} className={inputClass}/></Campo>
+    <div className="grid grid-cols-2 gap-4">
+      <Campo label="CNPJ"><input type="text" value={form.cnpj} onChange={e=>setForm({...form,cnpj:e.target.value})} className={inputClass}/></Campo>
+      <Campo label="Nome do Contato"><input type="text" value={form.contato} onChange={e=>setForm({...form,contato:e.target.value})} className={inputClass}/></Campo>
+    </div>
+    <div className="grid grid-cols-2 gap-4">
+      <Campo label="WhatsApp"><input type="text" value={form.whatsapp} onChange={e=>setForm({...form,whatsapp:e.target.value})} className={inputClass}/></Campo>
+      <Campo label="Telefone"><input type="text" value={form.telefone} onChange={e=>setForm({...form,telefone:e.target.value})} className={inputClass}/></Campo>
+    </div>
+    <div className="grid grid-cols-2 gap-4">
+      <Campo label="E-mail"><input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} className={inputClass}/></Campo>
+      <Campo label="Cidade"><input type="text" value={form.cidade} onChange={e=>setForm({...form,cidade:e.target.value})} className={inputClass}/></Campo>
+    </div>
+    <Campo label="Observações"><textarea rows={2} value={form.observacoes} onChange={e=>setForm({...form,observacoes:e.target.value})} className={inputClass+' resize-none'}/></Campo>
+    <BotaoSalvar onClick={salvar} loading={salvando} label="Salvar Alterações"/>
   </ModalWrapper>
   <AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
 }
