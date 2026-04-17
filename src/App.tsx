@@ -14,7 +14,7 @@ import { supabase } from './lib/supabase';
 import type { Pedido, Cliente, Produto, Compra } from './lib/supabase';
 
 /* ── TIPOS ─────────────────────────────────────────────────── */
-type ModalType = 'pedido'|'cliente'|'fornecedor'|'compra'|'novoProduto'|'novoClienteRapido'|'detalheOrc'|'detalheCompra'|'editarCliente'|'editarInsumo'|'editarProduto'|'perfilCliente'|'editarFornecedor'|'editarCR'|'editarCP'|'novoLancamentoCaixa'|'novoUsuario'|'editarUsuario'|null;
+type ModalType = 'pedido'|'cliente'|'fornecedor'|'compra'|'novoProduto'|'novoClienteRapido'|'detalheOrc'|'detalheCompra'|'editarCliente'|'editarInsumo'|'editarProduto'|'perfilCliente'|'editarFornecedor'|'editarCR'|'editarCP'|'novoLancamentoCaixa'|'novaContaReceber'|'novaContaPagar'|'novoUsuario'|'editarUsuario'|null;
 type UserRole = 'admin'|'colaborador';
 interface AppUser { nome:string; role:UserRole; }
 
@@ -134,7 +134,9 @@ export default function App() {
     {id:'contasreceber',label:'Contas a Receber',   icon:<DollarSign size={20}/>,      roles:['admin']},
     {id:'compras',      label:'Compras',            icon:<Truck size={20}/>,           roles:['admin','colaborador']},
     {id:'contaspagar',  label:'Contas a Pagar',     icon:<TrendingDown size={20}/>,    roles:['admin']},
-    {id:'config',       label:'Configurações',      icon:<Settings size={20}/>,        roles:['admin']},
+    {id:'caixa',         label:'Controle de Caixa',  icon:<DollarSign size={20}/>,      roles:['admin']},
+    {id:'lucratividade', label:'Lucratividade',       icon:<TrendingUp size={20}/>,       roles:['admin']},
+    {id:'config',        label:'Configurações',       icon:<Settings size={20}/>,         roles:['admin']},
   ].filter(t=>t.roles.includes(user.role));
 
   const headerBtn=()=>{
@@ -142,11 +144,20 @@ export default function App() {
     if(activeTab==='fornecedores')      return{label:'Novo Fornecedor', action:()=>setModal('fornecedor')};
     if(activeTab==='compras')           return{label:'Nova Compra',     action:()=>setModal('compra')};
     if(activeTab==='produtos')          return{label:'Novo Produto',    action:()=>setModal('novoProduto')};
-    if(activeTab==='vendas'||activeTab==='contasreceber'||activeTab==='contaspagar') return{label:'Novo Orçamento', action:()=>setModal('pedido')};
+    if(activeTab==='caixa')       return{label:'Novo Lançamento', action:()=>setModal('novoLancamentoCaixa')};
+    if(activeTab==='contasreceber') return{label:'Nova Conta',    action:()=>setModal('novaContaReceber')};
+    if(activeTab==='contaspagar')   return{label:'Nova Conta',    action:()=>setModal('novaContaPagar')};
+    if(activeTab==='vendas'||activeTab==='lucratividade') return{label:'Novo Orçamento', action:()=>setModal('pedido')};
     return{label:'Novo Orçamento', action:()=>setModal('pedido')};
   };
   const btn=headerBtn();
   const navigate=(tab:string)=>{setActiveTab(tab);setSidebarOpen(false);setSearchQuery('');};
+  // Reload data when tab becomes visible (fixes F5 issue - data is always fresh on tab switch)
+  useEffect(()=>{
+    const handler=()=>{if(document.visibilityState==='visible'){setContasKey(k=>k+1);setKanbanKey(k=>k+1);setCaixaKey(k=>k+1);setComprasKey(k=>k+1);}};
+    document.addEventListener('visibilitychange',handler);
+    return()=>document.removeEventListener('visibilitychange',handler);
+  },[]);
 
   const abrirDetalheOrc=(p:Pedido)=>{setPedidoSelecionado(p);setModal('detalheOrc');};
   const abrirEditarCliente=(c:any)=>{setClienteSelecionadoEdit(c);setModal('editarCliente');};
@@ -229,6 +240,7 @@ export default function App() {
                 {activeTab==='compras'      && <ComprasView      key={comprasKey} searchQuery={searchQuery} onAdd={()=>setModal('compra')} onAbrirDetalhe={abrirDetalheCompra}/>}
                 {activeTab==='contaspagar'  && <ContasPagarView  key={contasKey} onEditar={abrirEditarCP}/>}
                 {activeTab==='caixa'        && <CaixaView       key={caixaKey} onNovo={()=>setModal('novoLancamentoCaixa')} onLancado={()=>setCaixaKey(k=>k+1)}/>}
+                {activeTab==='lucratividade'&& <LucratividadeView/>}
                 {activeTab==='config'       && <ConfigView      onNovoUsuario={()=>setModal('novoUsuario')} onEditarUsuario={abrirEditarUsuario}/>}
               </motion.div>
             </AnimatePresence>
@@ -250,6 +262,8 @@ export default function App() {
           {modal==='editarProduto'   && produtoSelecionadoEdit   && <ModalEditarProduto   produto={produtoSelecionadoEdit}   onClose={()=>{setModal(null);setProdutoSelecionadoEdit(null);setKanbanKey(k=>k+1);}}/>}
           {modal==='editarFornecedor'  && fornecedorSelecionadoEdit && <ModalEditarFornecedor  fornecedor={fornecedorSelecionadoEdit} onClose={()=>{setModal(null);setFornecedorSelecionadoEdit(null);setKanbanKey(k=>k+1);}}/>}
           {modal==='editarCR'          && crSelecionado             && <ModalEditarCR           conta={crSelecionado}              onClose={()=>{setModal(null);setCrSelecionado(null);setContasKey(k=>k+1);}}/>}
+          {modal==='novaContaReceber' &&                             <ModalNovaContaReceber                                     onClose={()=>{setModal(null);setContasKey(k=>k+1);}}/>}
+          {modal==='novaContaPagar'   &&                             <ModalNovaContaPagar                                       onClose={()=>{setModal(null);setContasKey(k=>k+1);}}/>}
           {modal==='editarCP'          && cpSelecionado             && <ModalEditarCP           conta={cpSelecionado}              onClose={()=>{setModal(null);setCpSelecionado(null);setContasKey(k=>k+1);}}/>}
           {modal==='novoLancamentoCaixa'&&                             <ModalNovoLancamentoCaixa                                   onClose={()=>{setModal(null);setCaixaKey(k=>k+1);}}/>}
           {modal==='novoUsuario'       &&                             <ModalNovoUsuario                                            onClose={()=>setModal(null)}/>}
@@ -629,6 +643,464 @@ function ProdutosView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=
                   <td className="px-5 py-4"><button onClick={()=>onEditar(p)} className="text-indigo-600 font-bold text-sm hover:underline">Editar / Composição</button></td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── VENDAS (resumo de orçamentos finalizados) ─────────────── */
+function VendasView() {
+  const[pedidos,setPedidos]=useState<any[]>([]);
+  const[loading,setLoading]=useState(true);
+  const load=useCallback(async()=>{
+    setLoading(true);
+    const{data}=await supabase.from('pedidos')
+      .select('*, kanban_status(*), clientes(nome)')
+      .order('updated_at',{ascending:false});
+    const finalizados=(data||[]).filter((p:any)=>p.kanban_status?.nome==='Finalizado');
+    setPedidos(finalizados);setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  const totalVendas=pedidos.reduce((a,p)=>a+Number(p.valor_total),0);
+  if(loading)return<LoadingSpinner label="Carregando vendas..."/>;
+  return(
+    <div className="space-y-5">
+      <div><h2 className="text-2xl md:text-3xl font-black">Vendas</h2><p className="text-slate-500 text-sm">Orçamentos com status <b>Finalizado</b></p></div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Total de Vendas</p><p className="text-2xl font-black text-indigo-600">R$ {totalVendas.toFixed(2)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Nº de Pedidos</p><p className="text-2xl font-black text-slate-700">{pedidos.length}</p></div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Ticket Médio</p><p className="text-2xl font-black text-emerald-600">R$ {pedidos.length>0?(totalVendas/pedidos.length).toFixed(2):'0.00'}</p></div>
+      </div>
+      {pedidos.length===0?(
+        <div className="bg-white rounded-3xl border border-slate-200 p-16 flex flex-col items-center gap-4 text-slate-300"><TrendingUp size={48}/><p className="font-black text-slate-400 text-lg uppercase tracking-widest">Nenhuma venda</p><p className="text-slate-400 text-sm">Mova um orçamento para "Finalizado" no CRM/Kanban ou use "Transformar em Venda".</p></div>
+      ):(
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
+          <table className="w-full text-left min-w-[600px]">
+            <thead><tr className="bg-slate-50 border-b border-slate-100">{['Código','Cliente','Valor Total','Data','Ações'].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {pedidos.map(p=>(
+                <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-5 py-4 font-black text-indigo-600 text-sm">#{p.codigo}</td>
+                  <td className="px-5 py-4 font-bold text-slate-800 text-sm">{p.clientes?.nome||p.cliente_nome_avulso||'—'}</td>
+                  <td className="px-5 py-4 font-black text-emerald-600 text-sm">R$ {Number(p.valor_total).toFixed(2)}</td>
+                  <td className="px-5 py-4 text-sm text-slate-500">{new Date(p.updated_at||p.created_at).toLocaleDateString('pt-BR')}</td>
+                  <td className="px-5 py-4"><span className="flex items-center gap-1 text-emerald-600 text-xs font-bold"><CheckCircle2 size={13}/>Finalizado</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── CLIENTES ──────────────────────────────────────────────── */
+function ClientesView({searchQuery,onAdd,onVerPerfil}:{searchQuery:string;onAdd:()=>void;onVerPerfil:(c:any)=>void}) {
+  const{clientes,loading}=useClientes(searchQuery);
+  const{user}=useAuth();
+  if(loading)return<LoadingSpinner label="Carregando clientes..."/>;
+  return(
+    <div className="space-y-5">
+      <div className="flex justify-between items-end flex-wrap gap-3">
+        <div><h2 className="text-2xl md:text-3xl font-black">Clientes</h2><p className="text-slate-500 text-sm">{clientes.length} clientes</p></div>
+        {user?.role==='admin'&&<button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Cliente</button>}
+      </div>
+      <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
+        <table className="w-full text-left min-w-[560px]">
+          <thead><tr className="bg-slate-50 border-b border-slate-100">{['Cliente','CPF/CNPJ','Cidade','WhatsApp','Ações'].map(h=><th key={h} className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
+          <tbody className="divide-y divide-slate-100">
+            {clientes.length===0&&<tr><td colSpan={5} className="px-6 py-10 text-center text-slate-400">Nenhum cliente.</td></tr>}
+            {clientes.map(c=>(
+              <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                <td className="px-6 py-4 font-bold text-slate-800 text-sm"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-black text-xs shrink-0">{c.nome.charAt(0).toUpperCase()}</div>{c.nome}</div></td>
+                <td className="px-6 py-4 text-sm text-slate-500">{c.cpf_cnpj||'—'}</td>
+                <td className="px-6 py-4 text-sm text-slate-500">{c.cidade||'—'}</td>
+                <td className="px-6 py-4">{c.whatsapp?<a href={`https://wa.me/55${c.whatsapp.replace(/\D/g,'')}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-emerald-600 font-bold text-sm hover:underline"><MessageSquare size={13}/>{c.whatsapp}</a>:<span className="text-slate-300 text-sm">—</span>}</td>
+                <td className="px-6 py-4"><button onClick={()=>onVerPerfil(c)} className="text-indigo-600 font-bold text-sm hover:underline">Ver Perfil</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ── FORNECEDORES ──────────────────────────────────────────── */
+function FornecedoresView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=>void;onEditar:(f:any)=>void}) {
+  const{fornecedores,loading}=useFornecedores(searchQuery);
+  if(loading)return<LoadingSpinner label="Carregando fornecedores..."/>;
+  return(
+    <div className="space-y-5">
+      <div className="flex justify-between items-end flex-wrap gap-3">
+        <div><h2 className="text-2xl md:text-3xl font-black">Fornecedores</h2><p className="text-slate-500 text-sm">{fornecedores.length} fornecedores</p></div>
+        <button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Fornecedor</button>
+      </div>
+      <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
+        <table className="w-full text-left min-w-[560px]">
+          <thead><tr className="bg-slate-50 border-b border-slate-100">{['Fornecedor','CNPJ','Contato','WhatsApp','Ações'].map(h=><th key={h} className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
+          <tbody className="divide-y divide-slate-100">
+            {fornecedores.length===0&&<tr><td colSpan={5} className="px-6 py-10 text-center text-slate-400">Nenhum fornecedor.</td></tr>}
+            {fornecedores.map(f=>(
+              <tr key={f.id} className="hover:bg-slate-50 transition-colors">
+                <td className="px-6 py-4 font-bold text-slate-800 text-sm">{f.nome}</td>
+                <td className="px-6 py-4 text-sm text-slate-500">{f.cnpj||'—'}</td>
+                <td className="px-6 py-4 text-sm text-slate-500">{f.contato||'—'}</td>
+                <td className="px-6 py-4">{f.whatsapp?<a href={`https://wa.me/55${f.whatsapp.replace(/\D/g,'')}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-emerald-600 font-bold text-sm hover:underline"><MessageSquare size={13}/>{f.whatsapp}</a>:<span className="text-slate-300 text-sm">—</span>}</td>
+                <td className="px-6 py-4"><button onClick={()=>onEditar(f)} className="text-indigo-600 font-bold text-sm hover:underline">Editar</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ── COMPRAS ───────────────────────────────────────────────── */
+function ComprasView({searchQuery,onAdd,onAbrirDetalhe}:{searchQuery:string;onAdd:()=>void;onAbrirDetalhe:(c:Compra)=>void}) {
+  const[compras,setCompras]=useState<Compra[]>([]);
+  const[loading,setLoading]=useState(true);
+  const load=useCallback(async()=>{setLoading(true);const{data}=await supabase.from('compras').select('*').order('created_at',{ascending:false});setCompras(data||[]);setLoading(false);},[]);
+  useEffect(()=>{load();},[load]);
+  const f=compras.filter(c=>c.fornecedor_nome?.toLowerCase().includes(searchQuery.toLowerCase()));
+  if(loading)return<LoadingSpinner label="Carregando compras..."/>;
+  return(
+    <div className="space-y-5">
+      <div className="flex justify-between items-end flex-wrap gap-3">
+        <div><h2 className="text-2xl md:text-3xl font-black">Compras</h2><p className="text-slate-500 text-sm">{f.length} registros</p></div>
+        <button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Nova Compra</button>
+      </div>
+      {f.length===0?(
+        <div className="bg-white rounded-3xl border border-slate-200 p-16 flex flex-col items-center gap-4 text-slate-300"><Truck size={48}/><p className="font-black text-slate-400 text-lg uppercase tracking-widest">Nenhuma compra</p><p className="text-slate-400 text-sm">Clique em "Nova Compra" para registrar.</p></div>
+      ):(
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
+          <table className="w-full text-left min-w-[600px]">
+            <thead><tr className="bg-slate-50 border-b border-slate-100">{['Fornecedor','Data','Nota Fiscal','Total','Status','Ações'].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {f.map(c=>(
+                <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-5 py-4 font-bold text-slate-800 text-sm">{c.fornecedor_nome}</td>
+                  <td className="px-5 py-4 text-sm text-slate-500">{c.data?new Date(c.data).toLocaleDateString('pt-BR'):'—'}</td>
+                  <td className="px-5 py-4 text-sm text-slate-500">{c.nota_fiscal||'—'}</td>
+                  <td className="px-5 py-4 font-black text-indigo-600 text-sm">R$ {Number(c.total||0).toFixed(2)}</td>
+                  <td className="px-5 py-4">
+                    <BadgeStatus status={c.status||'Pendente'} options={STATUS_COMPRA} onChange={async s=>{await supabase.from('compras').update({status:s}).eq('id',c.id);load();}}/>
+                  </td>
+                  <td className="px-5 py-4">
+                    <button onClick={()=>onAbrirDetalhe(c)} className="text-indigo-600 font-bold text-sm hover:underline">Detalhes</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── DETALHE COMPRA (status + itens + enviar p/ contas a pagar) ── */
+function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
+  const[status,setStatus]=useState(compra.status||'Pendente');
+  const[itens,setItens]=useState<any[]>(compra.itens||[]);
+  const[salvando,setSalvando]=useState(false);
+  const[toast,setToast]=useState('');
+  const[toastColor,setToastColor]=useState<'emerald'|'indigo'|'rose'>('emerald');
+  const total=itens.reduce((a,i)=>a+i.quantidade*i.valor_unitario,0);
+
+  const addLinha=()=>setItens(p=>[...p,{id:crypto.randomUUID(),descricao:'',quantidade:1,valor_unitario:0}]);
+  const upd=(id:string,k:string,v:any)=>setItens(p=>p.map(i=>i.id===id?{...i,[k]:v}:i));
+  const del=(id:string)=>setItens(p=>p.filter(i=>i.id!==id));
+
+  const salvar=async()=>{
+    setSalvando(true);
+    await supabase.from('compras').update({status,itens,total,updated_at:new Date().toISOString()}).eq('id',compra.id);
+    setSalvando(false);setToast('Compra salva! Feche para atualizar a lista.');setToastColor('emerald');
+  };
+
+  const enviarContasPagar=async()=>{
+    if(!confirm('Lançar esta compra em Contas a Pagar?'))return;
+    setSalvando(true);
+    await supabase.from('contas_pagar').insert({
+      compra_id:compra.id,
+      fornecedor_nome:compra.fornecedor_nome,
+      descricao:`Compra de ${compra.fornecedor_nome}${compra.nota_fiscal?' — NF '+compra.nota_fiscal:''}`,
+      valor:total||compra.total,
+      data_vencimento:compra.data||null,
+      status:'Aguardando',
+    });
+    await supabase.from('compras').update({status:'Recebido'}).eq('id',compra.id);
+    setSalvando(false);setToast('Lançado em Contas a Pagar! ✅');setToastColor('indigo');setTimeout(onClose,1800);
+  };
+
+  return(
+    <>
+    <ModalWrapper title={`Compra — ${compra.fornecedor_nome}`} onClose={onClose} size="lg">
+      <div className="bg-slate-50 rounded-2xl p-4 flex flex-wrap gap-4 justify-between items-start">
+        <div><p className="text-xs text-slate-400 font-bold uppercase mb-1">Fornecedor</p><p className="font-black text-slate-800">{compra.fornecedor_nome}</p></div>
+        <div><p className="text-xs text-slate-400 font-bold uppercase mb-1">Status</p><BadgeStatus status={status} options={STATUS_COMPRA} onChange={setStatus}/></div>
+        <div><p className="text-xs text-slate-400 font-bold uppercase mb-1">Data</p><p className="font-bold text-sm text-slate-700">{compra.data?new Date(compra.data).toLocaleDateString('pt-BR'):'—'}</p></div>
+        <div><p className="text-xs text-slate-400 font-bold uppercase mb-1">Total</p><p className="font-black text-indigo-600 text-lg">R$ {total.toFixed(2)}</p></div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex justify-between items-center">
+          <p className="text-xs font-black text-slate-500 uppercase">Itens Comprados</p>
+          <button onClick={addLinha} className="text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1"><Plus size={11}/>Adicionar linha</button>
+        </div>
+        <div className="border border-slate-200 rounded-2xl overflow-hidden overflow-x-auto">
+          <table className="w-full text-sm min-w-[440px]">
+            <thead><tr className="bg-slate-50 border-b border-slate-100">
+              <th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase">Descrição</th>
+              <th className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 uppercase w-16">Qtd</th>
+              <th className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 uppercase w-28">Vlr Unit (R$)</th>
+              <th className="px-3 py-2.5 text-right text-[10px] font-black text-slate-400 uppercase w-24">Total</th>
+              <th className="w-8"></th>
+            </tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {itens.map((item,idx)=>(
+                <tr key={item.id||idx}>
+                  <td className="px-3 py-2"><input type="text" value={item.descricao||''} onChange={e=>upd(item.id||idx,'descricao',e.target.value)} className="w-full text-sm bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/></td>
+                  <td className="px-3 py-2"><input type="number" min="1" value={item.quantidade} onChange={e=>upd(item.id||idx,'quantidade',Number(e.target.value))} className="w-full text-center text-sm font-bold bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/></td>
+                  <td className="px-3 py-2"><input type="number" min="0" step="0.01" value={item.valor_unitario} onChange={e=>upd(item.id||idx,'valor_unitario',Number(e.target.value))} className="w-full text-center text-sm font-bold bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/></td>
+                  <td className="px-3 py-2 text-right font-black text-indigo-600 text-sm">R$ {(item.quantidade*item.valor_unitario).toFixed(2)}</td>
+                  <td className="px-3 py-2"><button onClick={()=>del(item.id||idx)} className="text-slate-300 hover:text-rose-500"><Trash2 size={13}/></button></td>
+                </tr>
+              ))}
+              {itens.length===0&&<tr><td colSpan={5} className="px-4 py-6 text-center text-slate-400 text-sm">Nenhum item. Clique em "Adicionar linha".</td></tr>}
+            </tbody>
+            <tfoot><tr className="bg-indigo-50 border-t-2 border-indigo-100">
+              <td colSpan={3} className="px-3 py-3 text-right font-black text-slate-600 text-sm uppercase">Total:</td>
+              <td className="px-3 py-3 text-right font-black text-indigo-700 text-base">R$ {total.toFixed(2)}</td>
+              <td></td>
+            </tr></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div className="flex gap-3 flex-wrap">
+        <button onClick={salvar} disabled={salvando} className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white py-3 rounded-xl font-bold text-sm shadow-lg transition-all">
+          {salvando?'Salvando...':'💾 Salvar Alterações'}
+        </button>
+      </div>
+      <button onClick={enviarContasPagar} disabled={salvando}
+        className="w-full bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-rose-100 transition-all flex items-center justify-center gap-2">
+        <TrendingDown size={16}/>Enviar para Contas a Pagar
+      </button>
+    </ModalWrapper>
+    <AnimatePresence>{toast&&<Toast message={toast} color={toastColor} onClose={()=>setToast('')}/>}</AnimatePresence>
+    </>
+  );
+}
+
+/* ── CONTAS A RECEBER ─────────────────────────────────────── */
+function ContasReceberView({onEditar}:{onEditar:(c:any)=>void}) {
+  const[contas,setContas]=useState<any[]>([]);
+  const[loading,setLoading]=useState(true);
+  const[erroTabela,setErroTabela]=useState(false);
+  // Filtros
+  const[filtroStatus,setFiltroStatus]=useState('Todos');
+  const[filtroDe,setFiltroDe]=useState('');
+  const[filtroAte,setFiltroAte]=useState('');
+  const[filtroBusca,setFiltroBusca]=useState('');
+
+  const load=useCallback(async()=>{
+    setLoading(true);setErroTabela(false);
+    const{data,error}=await supabase.from('contas_receber').select('*').order('data_vencimento',{ascending:true});
+    if(error){setErroTabela(true);}else setContas(data||[]);
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  const filtradas=contas.filter(c=>{
+    if(filtroStatus!=='Todos'&&c.status!==filtroStatus)return false;
+    if(filtroBusca&&!c.cliente_nome?.toLowerCase().includes(filtroBusca.toLowerCase())&&!c.descricao?.toLowerCase().includes(filtroBusca.toLowerCase()))return false;
+    if(filtroDe&&c.data_vencimento&&c.data_vencimento<filtroDe)return false;
+    if(filtroAte&&c.data_vencimento&&c.data_vencimento>filtroAte)return false;
+    return true;
+  });
+
+  const excluir=async(id:string)=>{
+    if(!confirm('Excluir esta conta? Esta ação não pode ser desfeita.'))return;
+    await supabase.from('contas_receber').delete().eq('id',id);
+    load();
+  };
+
+  const aReceber=filtradas.filter(c=>c.status==='Aguardando').reduce((a,c)=>a+Number(c.valor),0);
+  const recebido=filtradas.filter(c=>c.status==='Recebido').reduce((a,c)=>a+Number(c.valor),0);
+  const atrasado=filtradas.filter(c=>c.status==='Atrasado').reduce((a,c)=>a+Number(c.valor),0);
+
+  if(loading)return<LoadingSpinner label="Carregando contas a receber..."/>;
+  return(
+    <div className="space-y-5">
+      <div className="flex justify-between items-end flex-wrap gap-3">
+        <div><h2 className="text-2xl md:text-3xl font-black">Contas a Receber</h2><p className="text-slate-500 text-sm">{filtradas.length} de {contas.length} registros</p></div>
+        <button onClick={load} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl" title="Atualizar"><RefreshCw size={17}/></button>
+      </div>
+      {erroTabela&&<ErroTabela tabela="contas_receber"/>}
+
+      {/* Filtros */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-wrap gap-3">
+        <div className="relative flex-1 min-w-[160px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+          <input type="text" placeholder="Buscar cliente..." value={filtroBusca} onChange={e=>setFiltroBusca(e.target.value)} className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-400"/>
+        </div>
+        <select value={filtroStatus} onChange={e=>setFiltroStatus(e.target.value)} className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-400">
+          <option value="Todos">Todos os status</option>
+          {STATUS_CR.map(s=><option key={s} value={s}>{s}</option>)}
+        </select>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-slate-400 uppercase">Venc.</span>
+          <input type="date" value={filtroDe} onChange={e=>setFiltroDe(e.target.value)} className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-400"/>
+          <span className="text-slate-300">→</span>
+          <input type="date" value={filtroAte} onChange={e=>setFiltroAte(e.target.value)} className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-400"/>
+        </div>
+        {(filtroStatus!=='Todos'||filtroBusca||filtroDe||filtroAte)&&<button onClick={()=>{setFiltroStatus('Todos');setFiltroBusca('');setFiltroDe('');setFiltroAte('');}} className="px-3 py-2 text-xs font-bold text-rose-500 hover:bg-rose-50 rounded-xl transition-all">Limpar</button>}
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="bg-white border border-slate-200 rounded-2xl p-4"><p className="text-xs font-black text-slate-400 uppercase mb-1">A Receber</p><p className="text-xl font-black text-amber-600">R$ {aReceber.toFixed(2)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4"><p className="text-xs font-black text-slate-400 uppercase mb-1">Recebido</p><p className="text-xl font-black text-emerald-600">R$ {recebido.toFixed(2)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4"><p className="text-xs font-black text-slate-400 uppercase mb-1">Atrasado</p><p className="text-xl font-black text-rose-600">R$ {atrasado.toFixed(2)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4"><p className="text-xs font-black text-slate-400 uppercase mb-1">Registros</p><p className="text-xl font-black text-slate-700">{filtradas.length}</p></div>
+      </div>
+
+      {!erroTabela&&filtradas.length===0&&<div className="bg-white rounded-3xl border border-slate-200 p-12 flex flex-col items-center gap-3 text-slate-300"><TrendingUp size={44}/><p className="font-black text-slate-400 text-lg uppercase tracking-widest">{contas.length===0?'Nenhuma conta':'Nenhum resultado'}</p><p className="text-slate-400 text-sm">{contas.length===0?'Use o botão "Nova Conta" acima.':'Tente mudar os filtros.'}</p></div>}
+      {filtradas.length>0&&(
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
+          <table className="w-full text-left min-w-[700px]">
+            <thead><tr className="bg-slate-50 border-b border-slate-100">{['Cliente','Descrição','Valor','Vencimento','Status','Ações'].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {filtradas.map(c=>{
+                const venc=c.data_vencimento?new Date(c.data_vencimento+'T12:00:00'):null;
+                const atras=venc&&venc<new Date()&&c.status==='Aguardando';
+                return(
+                  <tr key={c.id} className={cn('hover:bg-slate-50 transition-colors',atras&&'bg-rose-50/40')}>
+                    <td className="px-5 py-4 font-bold text-slate-800 text-sm">{c.cliente_nome}</td>
+                    <td className="px-5 py-4 text-sm text-slate-500 max-w-[160px] truncate">{c.descricao||'—'}</td>
+                    <td className="px-5 py-4 font-black text-emerald-600 text-sm">R$ {Number(c.valor).toFixed(2)}</td>
+                    <td className={cn('px-5 py-4 text-sm font-bold',atras?'text-rose-600':'text-slate-500')}>{venc?venc.toLocaleDateString('pt-BR'):'—'}{atras&&' ⚠️'}</td>
+                    <td className="px-5 py-4"><BadgeStatus status={c.status||'Aguardando'} options={STATUS_CR} onChange={async s=>{await supabase.from('contas_receber').update({status:s,data_recebimento:s==='Recebido'?new Date().toISOString():null}).eq('id',c.id);load();}}/></td>
+                    <td className="px-5 py-4">
+                      <div className="flex gap-2">
+                        <button onClick={()=>onEditar(c)} className="text-indigo-600 font-bold text-sm hover:underline">Editar</button>
+                        <span className="text-slate-200">|</span>
+                        <button onClick={()=>excluir(c.id)} className="text-rose-400 font-bold text-sm hover:text-rose-600 hover:underline">Excluir</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── CONTAS A PAGAR ─────────────────────────────────────────── */
+function ContasPagarView({onEditar}:{onEditar:(c:any)=>void}) {
+  const[contas,setContas]=useState<any[]>([]);
+  const[loading,setLoading]=useState(true);
+  const[erroTabela,setErroTabela]=useState(false);
+  const[filtroStatus,setFiltroStatus]=useState('Todos');
+  const[filtroDe,setFiltroDe]=useState('');
+  const[filtroAte,setFiltroAte]=useState('');
+  const[filtroBusca,setFiltroBusca]=useState('');
+
+  const load=useCallback(async()=>{
+    setLoading(true);setErroTabela(false);
+    const{data,error}=await supabase.from('contas_pagar').select('*').order('data_vencimento',{ascending:true});
+    if(error){setErroTabela(true);}else setContas(data||[]);
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  const filtradas=contas.filter(c=>{
+    if(filtroStatus!=='Todos'&&c.status!==filtroStatus)return false;
+    if(filtroBusca&&!c.fornecedor_nome?.toLowerCase().includes(filtroBusca.toLowerCase())&&!c.descricao?.toLowerCase().includes(filtroBusca.toLowerCase()))return false;
+    if(filtroDe&&c.data_vencimento&&c.data_vencimento<filtroDe)return false;
+    if(filtroAte&&c.data_vencimento&&c.data_vencimento>filtroAte)return false;
+    return true;
+  });
+
+  const excluir=async(id:string)=>{
+    if(!confirm('Excluir esta conta? Esta ação não pode ser desfeita.'))return;
+    await supabase.from('contas_pagar').delete().eq('id',id);
+    load();
+  };
+
+  const aPagar=filtradas.filter(c=>c.status==='Aguardando').reduce((a,c)=>a+Number(c.valor),0);
+  const pago=filtradas.filter(c=>c.status==='Pago').reduce((a,c)=>a+Number(c.valor),0);
+  const atrasado=filtradas.filter(c=>c.status==='Atrasado').reduce((a,c)=>a+Number(c.valor),0);
+
+  if(loading)return<LoadingSpinner label="Carregando contas a pagar..."/>;
+  return(
+    <div className="space-y-5">
+      <div className="flex justify-between items-end flex-wrap gap-3">
+        <div><h2 className="text-2xl md:text-3xl font-black">Contas a Pagar</h2><p className="text-slate-500 text-sm">{filtradas.length} de {contas.length} registros</p></div>
+        <button onClick={load} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl" title="Atualizar"><RefreshCw size={17}/></button>
+      </div>
+      {erroTabela&&<ErroTabela tabela="contas_pagar"/>}
+
+      {/* Filtros */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-wrap gap-3">
+        <div className="relative flex-1 min-w-[160px]">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+          <input type="text" placeholder="Buscar fornecedor..." value={filtroBusca} onChange={e=>setFiltroBusca(e.target.value)} className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-400"/>
+        </div>
+        <select value={filtroStatus} onChange={e=>setFiltroStatus(e.target.value)} className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-400">
+          <option value="Todos">Todos os status</option>
+          {STATUS_CP.map(s=><option key={s} value={s}>{s}</option>)}
+        </select>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-slate-400 uppercase">Venc.</span>
+          <input type="date" value={filtroDe} onChange={e=>setFiltroDe(e.target.value)} className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-400"/>
+          <span className="text-slate-300">→</span>
+          <input type="date" value={filtroAte} onChange={e=>setFiltroAte(e.target.value)} className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-400"/>
+        </div>
+        {(filtroStatus!=='Todos'||filtroBusca||filtroDe||filtroAte)&&<button onClick={()=>{setFiltroStatus('Todos');setFiltroBusca('');setFiltroDe('');setFiltroAte('');}} className="px-3 py-2 text-xs font-bold text-rose-500 hover:bg-rose-50 rounded-xl transition-all">Limpar</button>}
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="bg-white border border-slate-200 rounded-2xl p-4"><p className="text-xs font-black text-slate-400 uppercase mb-1">A Pagar</p><p className="text-xl font-black text-rose-600">R$ {aPagar.toFixed(2)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4"><p className="text-xs font-black text-slate-400 uppercase mb-1">Pago</p><p className="text-xl font-black text-emerald-600">R$ {pago.toFixed(2)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4"><p className="text-xs font-black text-slate-400 uppercase mb-1">Atrasado</p><p className="text-xl font-black text-amber-600">R$ {atrasado.toFixed(2)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4"><p className="text-xs font-black text-slate-400 uppercase mb-1">Registros</p><p className="text-xl font-black text-slate-700">{filtradas.length}</p></div>
+      </div>
+
+      {!erroTabela&&filtradas.length===0&&<div className="bg-white rounded-3xl border border-slate-200 p-12 flex flex-col items-center gap-3 text-slate-300"><TrendingDown size={44}/><p className="font-black text-slate-400 text-lg uppercase tracking-widest">{contas.length===0?'Nenhuma conta':'Nenhum resultado'}</p><p className="text-slate-400 text-sm">{contas.length===0?'Use o botão "Nova Conta" acima.':'Tente mudar os filtros.'}</p></div>}
+      {filtradas.length>0&&(
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
+          <table className="w-full text-left min-w-[700px]">
+            <thead><tr className="bg-slate-50 border-b border-slate-100">{['Fornecedor','Descrição','Valor','Vencimento','Status','Ações'].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {filtradas.map(c=>{
+                const venc=c.data_vencimento?new Date(c.data_vencimento+'T12:00:00'):null;
+                const atras=venc&&venc<new Date()&&c.status==='Aguardando';
+                return(
+                  <tr key={c.id} className={cn('hover:bg-slate-50 transition-colors',atras&&'bg-rose-50/40')}>
+                    <td className="px-5 py-4 font-bold text-slate-800 text-sm">{c.fornecedor_nome}</td>
+                    <td className="px-5 py-4 text-sm text-slate-500 max-w-[160px] truncate">{c.descricao||'—'}</td>
+                    <td className="px-5 py-4 font-black text-rose-600 text-sm">R$ {Number(c.valor).toFixed(2)}</td>
+                    <td className={cn('px-5 py-4 text-sm font-bold',atras?'text-rose-600':'text-slate-500')}>{venc?venc.toLocaleDateString('pt-BR'):'—'}{atras&&' ⚠️'}</td>
+                    <td className="px-5 py-4"><BadgeStatus status={c.status||'Aguardando'} options={STATUS_CP} onChange={async s=>{await supabase.from('contas_pagar').update({status:s,data_pagamento:s==='Pago'?new Date().toISOString():null}).eq('id',c.id);load();}}/></td>
+                    <td className="px-5 py-4">
+                      <div className="flex gap-2">
+                        <button onClick={()=>onEditar(c)} className="text-indigo-600 font-bold text-sm hover:underline">Editar</button>
+                        <span className="text-slate-200">|</span>
+                        <button onClick={()=>excluir(c.id)} className="text-rose-400 font-bold text-sm hover:text-rose-600 hover:underline">Excluir</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -1519,6 +1991,181 @@ function ModalEditarUsuario({usuario,onClose}:{usuario:any;onClose:()=>void}) {
     <BotaoSalvar onClick={salvar} loading={salvando} label="Salvar Alterações"/>
   </ModalWrapper>
   <AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
+}
+
+/* ── MODAL NOVA CONTA A RECEBER ───────────────────────────── */
+function ModalNovaContaReceber({onClose}:{onClose:()=>void}) {
+  const[form,setForm]=useState({cliente_nome:'',descricao:'',valor:'',data_vencimento:'',status:'Aguardando'});
+  const[salvando,setSalvando]=useState(false);const[erro,setErro]=useState('');const[toast,setToast]=useState('');
+  const salvar=async()=>{
+    if(!form.cliente_nome.trim()||!form.valor||Number(form.valor)<=0){setErro('Cliente e valor são obrigatórios.');return;}
+    setSalvando(true);
+    const{error}=await supabase.from('contas_receber').insert({cliente_nome:form.cliente_nome,descricao:form.descricao||null,valor:Number(form.valor),data_vencimento:form.data_vencimento||null,status:form.status});
+    if(error){setErro('Erro: '+error.message);setSalvando(false);}
+    else{setToast('Conta criada! ✅');setTimeout(onClose,1400);}
+  };
+  return(<><ModalWrapper title="Nova Conta a Receber" onClose={onClose}>
+    {erro&&<MsgErro msg={erro}/>}
+    <Campo label="Cliente *"><input type="text" placeholder="Nome do cliente" value={form.cliente_nome} onChange={e=>setForm({...form,cliente_nome:e.target.value})} className={inputClass}/></Campo>
+    <Campo label="Descrição"><input type="text" placeholder="Ex: Pagamento parcela 1" value={form.descricao} onChange={e=>setForm({...form,descricao:e.target.value})} className={inputClass}/></Campo>
+    <div className="grid grid-cols-2 gap-4">
+      <Campo label="Valor (R$) *"><input type="number" step="0.01" min="0.01" value={form.valor} onChange={e=>setForm({...form,valor:e.target.value})} className={inputClass}/></Campo>
+      <Campo label="Vencimento"><input type="date" value={form.data_vencimento} onChange={e=>setForm({...form,data_vencimento:e.target.value})} className={inputClass}/></Campo>
+    </div>
+    <Campo label="Status"><select value={form.status} onChange={e=>setForm({...form,status:e.target.value})} className={inputClass}>{STATUS_CR.map(s=><option key={s} value={s}>{s}</option>)}</select></Campo>
+    <BotaoSalvar onClick={salvar} loading={salvando} label="Criar Conta a Receber"/>
+  </ModalWrapper>
+  <AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
+}
+
+/* ── MODAL NOVA CONTA A PAGAR ──────────────────────────────── */
+function ModalNovaContaPagar({onClose}:{onClose:()=>void}) {
+  const[form,setForm]=useState({fornecedor_nome:'',descricao:'',valor:'',data_vencimento:'',status:'Aguardando'});
+  const[salvando,setSalvando]=useState(false);const[erro,setErro]=useState('');const[toast,setToast]=useState('');
+  const salvar=async()=>{
+    if(!form.fornecedor_nome.trim()||!form.valor||Number(form.valor)<=0){setErro('Fornecedor e valor são obrigatórios.');return;}
+    setSalvando(true);
+    const{error}=await supabase.from('contas_pagar').insert({fornecedor_nome:form.fornecedor_nome,descricao:form.descricao||null,valor:Number(form.valor),data_vencimento:form.data_vencimento||null,status:form.status});
+    if(error){setErro('Erro: '+error.message);setSalvando(false);}
+    else{setToast('Conta criada! ✅');setTimeout(onClose,1400);}
+  };
+  return(<><ModalWrapper title="Nova Conta a Pagar" onClose={onClose}>
+    {erro&&<MsgErro msg={erro}/>}
+    <Campo label="Fornecedor *"><input type="text" placeholder="Nome do fornecedor" value={form.fornecedor_nome} onChange={e=>setForm({...form,fornecedor_nome:e.target.value})} className={inputClass}/></Campo>
+    <Campo label="Descrição"><input type="text" placeholder="Ex: Aluguel março" value={form.descricao} onChange={e=>setForm({...form,descricao:e.target.value})} className={inputClass}/></Campo>
+    <div className="grid grid-cols-2 gap-4">
+      <Campo label="Valor (R$) *"><input type="number" step="0.01" min="0.01" value={form.valor} onChange={e=>setForm({...form,valor:e.target.value})} className={inputClass}/></Campo>
+      <Campo label="Vencimento"><input type="date" value={form.data_vencimento} onChange={e=>setForm({...form,data_vencimento:e.target.value})} className={inputClass}/></Campo>
+    </div>
+    <Campo label="Status"><select value={form.status} onChange={e=>setForm({...form,status:e.target.value})} className={inputClass}>{STATUS_CP.map(s=><option key={s} value={s}>{s}</option>)}</select></Campo>
+    <BotaoSalvar onClick={salvar} loading={salvando} label="Criar Conta a Pagar"/>
+  </ModalWrapper>
+  <AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
+}
+
+/* ── PAINEL DE LUCRATIVIDADE ───────────────────────────────── */
+function LucratividadeView() {
+  const hoje = new Date();
+  const mesAtual = hoje.toISOString().slice(0,7);
+  const[de,setDe]=useState(mesAtual+'-01');
+  const[ate,setAte]=useState(hoje.toISOString().slice(0,10));
+  const[dados,setDados]=useState<any>({});
+  const[loading,setLoading]=useState(true);
+
+  const calcular=useCallback(async()=>{
+    setLoading(true);
+    const [rVendas,rCR,rCP,rCaixa]=await Promise.all([
+      supabase.from('pedidos').select('valor_total,created_at,kanban_status(nome)').gte('created_at',de+'T00:00:00').lte('created_at',ate+'T23:59:59'),
+      supabase.from('contas_receber').select('valor,status,data_vencimento').gte('data_vencimento',de).lte('data_vencimento',ate),
+      supabase.from('contas_pagar').select('valor,status,data_vencimento').gte('data_vencimento',de).lte('data_vencimento',ate),
+      supabase.from('caixa').select('tipo,valor,data,categoria').gte('data',de).lte('data',ate),
+    ]);
+    const vendas=(rVendas.data||[]).filter((p:any)=>p.kanban_status?.nome==='Finalizado');
+    const receitaVendas=vendas.reduce((a:number,p:any)=>a+Number(p.valor_total),0);
+    const cr=rCR.data||[];
+    const cp=rCP.data||[];
+    const cx=rCaixa.data||[];
+    const crRecebido=cr.filter((c:any)=>c.status==='Recebido').reduce((a:number,c:any)=>a+Number(c.valor),0);
+    const crAguardando=cr.filter((c:any)=>c.status==='Aguardando').reduce((a:number,c:any)=>a+Number(c.valor),0);
+    const cpPago=cp.filter((c:any)=>c.status==='Pago').reduce((a:number,c:any)=>a+Number(c.valor),0);
+    const cpAguardando=cp.filter((c:any)=>c.status==='Aguardando').reduce((a:number,c:any)=>a+Number(c.valor),0);
+    const cxCredito=cx.filter((l:any)=>l.tipo==='credito').reduce((a:number,l:any)=>a+Number(l.valor),0);
+    const cxDebito=cx.filter((l:any)=>l.tipo==='debito').reduce((a:number,l:any)=>a+Number(l.valor),0);
+    const totalEntradas=crRecebido+cxCredito;
+    const totalSaidas=cpPago+cxDebito;
+    const lucroLiquido=totalEntradas-totalSaidas;
+    // Categorias de caixa
+    const catMap:Record<string,{credito:number;debito:number}>={}; 
+    cx.forEach((l:any)=>{if(!catMap[l.categoria])catMap[l.categoria]={credito:0,debito:0};catMap[l.categoria][l.tipo as 'credito'|'debito']+=Number(l.valor);});
+    setDados({receitaVendas,pedidosFin:vendas.length,crRecebido,crAguardando,cpPago,cpAguardando,cxCredito,cxDebito,totalEntradas,totalSaidas,lucroLiquido,catMap,cxLancamentos:cx.length});
+    setLoading(false);
+  },[de,ate]);
+
+  useEffect(()=>{calcular();},[calcular]);
+
+  const Card=({label,value,color,sub}:{label:string;value:string;color:string;sub?:string})=>(
+    <div className="bg-white border border-slate-200 rounded-2xl p-5">
+      <p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">{label}</p>
+      <p className={cn('text-2xl font-black',color)}>{value}</p>
+      {sub&&<p className="text-xs text-slate-400 mt-1">{sub}</p>}
+    </div>
+  );
+
+  return(
+    <div className="space-y-6">
+      <div className="flex justify-between items-end flex-wrap gap-3">
+        <div><h2 className="text-2xl md:text-3xl font-black">Lucratividade</h2><p className="text-slate-500 text-sm">Consolidado financeiro do período</p></div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2">
+            <span className="text-xs font-bold text-slate-400 uppercase">De</span>
+            <input type="date" value={de} onChange={e=>setDe(e.target.value)} className="text-sm outline-none bg-transparent"/>
+          </div>
+          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2">
+            <span className="text-xs font-bold text-slate-400 uppercase">Até</span>
+            <input type="date" value={ate} onChange={e=>setAte(e.target.value)} className="text-sm outline-none bg-transparent"/>
+          </div>
+          <button onClick={calcular} className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all">
+            <RefreshCw size={14}/>Calcular
+          </button>
+        </div>
+      </div>
+
+      {loading?<LoadingSpinner label="Calculando..."/>:(
+        <>
+        {/* Resultado principal */}
+        <div className={cn('rounded-3xl p-6 text-center',dados.lucroLiquido>=0?'bg-emerald-600':'bg-rose-600')}>
+          <p className="text-emerald-100 font-black text-sm uppercase tracking-widest mb-1">Lucro Líquido do Período</p>
+          <p className="text-5xl font-black text-white">R$ {Math.abs(dados.lucroLiquido||0).toFixed(2)}</p>
+          <p className="text-emerald-100 text-sm mt-2">{dados.lucroLiquido>=0?'▲ Resultado positivo':'▼ Resultado negativo'}</p>
+        </div>
+
+        {/* Cards resumo */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card label="Vendas Finalizadas" value={`R$ ${(dados.receitaVendas||0).toFixed(2)}`} color="text-indigo-600" sub={`${dados.pedidosFin||0} pedido(s)`}/>
+          <Card label="Recebido (CR)" value={`R$ ${(dados.crRecebido||0).toFixed(2)}`} color="text-emerald-600" sub={`A receber: R$ ${(dados.crAguardando||0).toFixed(2)}`}/>
+          <Card label="Pago (CP)" value={`R$ ${(dados.cpPago||0).toFixed(2)}`} color="text-rose-600" sub={`A pagar: R$ ${(dados.cpAguardando||0).toFixed(2)}`}/>
+          <Card label="Lançamentos Caixa" value={`${dados.cxLancamentos||0}`} color="text-slate-700" sub={`Créditos: R$ ${(dados.cxCredito||0).toFixed(2)}`}/>
+        </div>
+
+        {/* Entradas vs Saídas */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h3 className="font-black text-slate-800 mb-4 flex items-center gap-2"><TrendingUp size={18} className="text-emerald-500"/>Total de Entradas</h3>
+            <p className="text-3xl font-black text-emerald-600 mb-4">R$ {(dados.totalEntradas||0).toFixed(2)}</p>
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm"><span className="text-slate-500">Contas Recebidas</span><span className="font-bold text-slate-700">R$ {(dados.crRecebido||0).toFixed(2)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-slate-500">Créditos no Caixa</span><span className="font-bold text-slate-700">R$ {(dados.cxCredito||0).toFixed(2)}</span></div>
+            </div>
+          </div>
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h3 className="font-black text-slate-800 mb-4 flex items-center gap-2"><TrendingDown size={18} className="text-rose-500"/>Total de Saídas</h3>
+            <p className="text-3xl font-black text-rose-600 mb-4">R$ {(dados.totalSaidas||0).toFixed(2)}</p>
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm"><span className="text-slate-500">Contas Pagas</span><span className="font-bold text-slate-700">R$ {(dados.cpPago||0).toFixed(2)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-slate-500">Débitos no Caixa</span><span className="font-bold text-slate-700">R$ {(dados.cxDebito||0).toFixed(2)}</span></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Categorias do caixa */}
+        {Object.keys(dados.catMap||{}).length>0&&(
+          <div className="bg-white rounded-3xl border border-slate-200 p-6">
+            <h3 className="font-black text-slate-800 mb-4">Lançamentos por Categoria</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {Object.entries(dados.catMap||{}).map(([cat,vals]:any)=>(
+                <div key={cat} className="bg-slate-50 rounded-2xl p-3">
+                  <p className="text-xs font-black text-slate-500 uppercase mb-2">{cat}</p>
+                  {vals.credito>0&&<p className="text-xs text-emerald-600 font-bold">+R$ {vals.credito.toFixed(2)}</p>}
+                  {vals.debito>0&&<p className="text-xs text-rose-600 font-bold">-R$ {vals.debito.toFixed(2)}</p>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        </>
+      )}
+    </div>
+  );
 }
 
 /* ── AUXILIARES ────────────────────────────────────────────── */
