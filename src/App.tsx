@@ -151,7 +151,8 @@ export default function App() {
     return{label:'Novo Orçamento', action:()=>setModal('pedido')};
   };
   const btn=headerBtn();
-  const navigate=(tab:string)=>{setActiveTab(tab);setSidebarOpen(false);setSearchQuery('');};
+  const[globalKey,setGlobalKey]=useState(0);
+  const navigate=(tab:string)=>{setActiveTab(tab);setSidebarOpen(false);setSearchQuery('');setGlobalKey(k=>k+1);};
   // Reload data when tab becomes visible (fixes F5 issue - data is always fresh on tab switch)
   useEffect(()=>{
     const handler=()=>{if(document.visibilityState==='visible'){setContasKey(k=>k+1);setKanbanKey(k=>k+1);setCaixaKey(k=>k+1);setComprasKey(k=>k+1);}};
@@ -230,14 +231,14 @@ export default function App() {
           <div className="flex-1 overflow-auto p-4 md:p-8">
             <AnimatePresence mode="wait">
               <motion.div key={activeTab} initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-10}} transition={{duration:0.15}}>
-                {activeTab==='kanban'       && <KanbanView       key={kanbanKey} searchQuery={searchQuery} onNovoPedido={()=>setModal('pedido')} onAbrirDetalhe={abrirDetalheOrc}/>}
-                {activeTab==='insumos'      && <InsumosView      searchQuery={searchQuery} onEditar={abrirEditarInsumo}/>}
-                {activeTab==='produtos'     && <ProdutosView     searchQuery={searchQuery} onAdd={()=>setModal('novoProduto')} onEditar={abrirEditarProduto}/>}
-                {activeTab==='clientes'     && <ClientesView     searchQuery={searchQuery} onAdd={()=>setModal('cliente')} onVerPerfil={abrirPerfilCliente}/>}
-                {activeTab==='fornecedores' && <FornecedoresView searchQuery={searchQuery} onAdd={()=>setModal('fornecedor')} onEditar={abrirEditarFornecedor}/>}
-                {activeTab==='vendas'       && <VendasView/>}
+                {activeTab==='kanban'       && <KanbanView       key={kanbanKey+globalKey} searchQuery={searchQuery} onNovoPedido={()=>setModal('pedido')} onAbrirDetalhe={abrirDetalheOrc}/>}
+                {activeTab==='insumos'      && <InsumosView      key={globalKey} searchQuery={searchQuery} onEditar={abrirEditarInsumo}/>}
+                {activeTab==='produtos'     && <ProdutosView     key={globalKey} searchQuery={searchQuery} onAdd={()=>setModal('novoProduto')} onEditar={abrirEditarProduto}/>}
+                {activeTab==='clientes'     && <ClientesView     key={globalKey} searchQuery={searchQuery} onAdd={()=>setModal('cliente')} onVerPerfil={abrirPerfilCliente}/>}
+                {activeTab==='fornecedores' && <FornecedoresView key={globalKey} searchQuery={searchQuery} onAdd={()=>setModal('fornecedor')} onEditar={abrirEditarFornecedor}/>}
+                {activeTab==='vendas'       && <VendasView key={globalKey}/>}
                 {activeTab==='contasreceber'&& <ContasReceberView key={contasKey} onEditar={abrirEditarCR}/>}
-                {activeTab==='compras'      && <ComprasView      key={comprasKey} searchQuery={searchQuery} onAdd={()=>setModal('compra')} onAbrirDetalhe={abrirDetalheCompra}/>}
+                {activeTab==='compras'      && <ComprasView      key={comprasKey+globalKey} searchQuery={searchQuery} onAdd={()=>setModal('compra')} onAbrirDetalhe={abrirDetalheCompra}/>}
                 {activeTab==='contaspagar'  && <ContasPagarView  key={contasKey} onEditar={abrirEditarCP}/>}
                 {activeTab==='caixa'        && <CaixaView       key={caixaKey} onNovo={()=>setModal('novoLancamentoCaixa')} onLancado={()=>setCaixaKey(k=>k+1)}/>}
                 {activeTab==='lucratividade'&& <LucratividadeView/>}
@@ -567,17 +568,18 @@ function ModalDetalheOrcamento({pedido,onClose}:{pedido:Pedido;onClose:()=>void}
 
 /* ── INSUMOS ───────────────────────────────────────────────── */
 function InsumosView({searchQuery,onEditar}:{searchQuery:string;onEditar:(i:any)=>void}) {
-  const{insumos,insumosAbaixoMinimo,loading}=useInsumos(searchQuery);
+  const{insumos,insumosAbaixoMinimo,loading,refetch}=useInsumos(searchQuery);
+  const excluir=async(id:string)=>{if(!confirm('Excluir este insumo? Esta ação não pode ser desfeita.'))return;await supabase.from('insumos').update({ativo:false}).eq('id',id);refetch();};
   if(loading)return<LoadingSpinner label="Carregando insumos..."/>;
   return(
     <div className="space-y-5">
       <div><h2 className="text-2xl md:text-3xl font-black">Insumos & Estoque</h2><p className="text-slate-500 text-sm">{insumos.length} insumos{insumosAbaixoMinimo.length>0&&<span className="text-rose-600 font-bold ml-2">• {insumosAbaixoMinimo.length} abaixo do mínimo!</span>}</p></div>
       {insumosAbaixoMinimo.length>0&&<div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-start gap-3"><AlertTriangle size={17} className="text-rose-500 mt-0.5 shrink-0"/><div><p className="font-bold text-rose-700 text-sm">Estoque Baixo</p><p className="text-rose-600 text-sm">{insumosAbaixoMinimo.map(i=>i.nome).join(', ')}</p></div></div>}
       <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
-        <table className="w-full text-left min-w-[650px]">
+        <table className="w-full text-left min-w-[750px]">
           <thead><tr className="bg-slate-50 border-b border-slate-100">{['Insumo','Tipo','Unidade','Custo Unit.','Estoque','Mínimo','Status','Ações'].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-slate-100">
-            {insumos.length===0&&<tr><td colSpan={7} className="px-5 py-10 text-center text-slate-400" colSpan={8}>Nenhum insumo.</td></tr>}
+            {insumos.length===0&&<tr><td colSpan={8} className="px-5 py-10 text-center text-slate-400">Nenhum insumo.</td></tr>}
             {insumos.map(i=>{const b=i.estoque_atual<=i.estoque_minimo;return(
               <tr key={i.id} className="hover:bg-slate-50 transition-colors">
                 <td className="px-5 py-4 font-bold text-slate-800 text-sm">{i.nome}</td>
@@ -587,7 +589,7 @@ function InsumosView({searchQuery,onEditar}:{searchQuery:string;onEditar:(i:any)
                 <td className={cn('px-5 py-4 font-black text-sm',b?'text-rose-600':'text-slate-700')}>{Number(i.estoque_atual).toFixed(2)}</td>
                 <td className="px-5 py-4 text-sm text-slate-500">{Number(i.estoque_minimo).toFixed(2)}</td>
                 <td className="px-5 py-4">{b?<span className="flex items-center gap-1 text-rose-600 text-xs font-bold"><AlertCircle size={13}/>Repor</span>:<span className="flex items-center gap-1 text-emerald-600 text-xs font-bold"><CheckCircle2 size={13}/>OK</span>}</td>
-                <td className="px-5 py-4"><button onClick={()=>onEditar(i)} className="text-indigo-600 font-bold text-sm hover:underline">Editar</button></td>
+                <td className="px-5 py-4"><div className="flex gap-2"><button onClick={()=>onEditar(i)} className="text-indigo-600 font-bold text-sm hover:underline">Editar</button><span className="text-slate-200">|</span><button onClick={()=>excluir(i.id)} className="text-rose-400 font-bold text-sm hover:text-rose-600 hover:underline">Excluir</button></div></td>
               </tr>
             );})}
           </tbody>
@@ -601,37 +603,22 @@ function InsumosView({searchQuery,onEditar}:{searchQuery:string;onEditar:(i:any)
 function ProdutosView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=>void;onEditar:(p:any)=>void}) {
   const[produtos,setProdutos]=useState<Produto[]>([]);
   const[loading,setLoading]=useState(true);
-  const load=useCallback(async()=>{
-    setLoading(true);
-    let q=supabase.from('produtos').select('*').eq('ativo',true).order('nome');
-    if(searchQuery.trim())q=q.ilike('nome',`%${searchQuery}%`);
-    const{data}=await q;setProdutos(data||[]);setLoading(false);
-  },[searchQuery]);
+  const load=useCallback(async()=>{setLoading(true);let q=supabase.from('produtos').select('*').eq('ativo',true).order('nome');if(searchQuery.trim())q=q.ilike('nome',`%${searchQuery}%`);const{data}=await q;setProdutos(data||[]);setLoading(false);},[searchQuery]);
   useEffect(()=>{load();},[load]);
+  const excluir=async(id:string)=>{if(!confirm('Excluir este produto?'))return;await supabase.from('produtos').update({ativo:false}).eq('id',id);load();};
   if(loading)return<LoadingSpinner label="Carregando produtos..."/>;
   return(
     <div className="space-y-5">
       <div className="flex justify-between items-end flex-wrap gap-3">
-        <div>
-          <h2 className="text-2xl md:text-3xl font-black">Produtos & Kits</h2>
-          <p className="text-slate-500 text-sm">{produtos.length} produtos cadastrados — são o que você <b>vende</b> ao cliente</p>
-        </div>
+        <div><h2 className="text-2xl md:text-3xl font-black">Produtos & Kits</h2><p className="text-slate-500 text-sm">{produtos.length} produtos — o que você <b>vende</b> ao cliente</p></div>
         <button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Produto</button>
       </div>
-      <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 flex gap-3">
-        <AlertTriangle size={16} className="text-indigo-400 shrink-0 mt-0.5"/>
-        <p className="text-sm text-indigo-700"><b>Dica:</b> Produtos são o que você vende (Kit Festa, Adesivo, Convite). Insumos são o que você compra (Papel, Tinta, Vinil). A composição de um produto define quais insumos ele consome.</p>
-      </div>
+      <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-3 flex gap-2 text-sm text-indigo-700"><AlertTriangle size={15} className="text-indigo-400 shrink-0 mt-0.5"/><span><b>Dica:</b> Produtos = o que você vende. Insumos = o que você compra (matéria-prima).</span></div>
       {produtos.length===0?(
-        <div className="bg-white rounded-3xl border border-slate-200 p-16 flex flex-col items-center gap-4 text-slate-300">
-          <ShoppingCart size={48}/>
-          <p className="font-black text-slate-400 text-lg uppercase tracking-widest">Nenhum produto</p>
-          <p className="text-slate-400 text-sm text-center">Clique em "Novo Produto" para cadastrar o que você vende.<br/>Ex: Kit Festa Safari, Convite Casamento, Adesivo 10x10.</p>
-          <button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 transition-all mt-2"><Plus size={15} strokeWidth={3}/>Cadastrar Primeiro Produto</button>
-        </div>
+        <div className="bg-white rounded-3xl border border-slate-200 p-16 flex flex-col items-center gap-4 text-slate-300"><ShoppingCart size={48}/><p className="font-black text-slate-400 text-lg uppercase tracking-widest">Nenhum produto</p><button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 mt-2"><Plus size={15} strokeWidth={3}/>Cadastrar Primeiro Produto</button></div>
       ):(
         <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
-          <table className="w-full text-left min-w-[600px]">
+          <table className="w-full text-left min-w-[650px]">
             <thead><tr className="bg-slate-50 border-b border-slate-100">{['Produto','Categoria','Markup','MO/hora','Ações'].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
               {produtos.map(p=>(
@@ -640,7 +627,7 @@ function ProdutosView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=
                   <td className="px-5 py-4"><span className="text-[10px] font-black uppercase bg-indigo-50 text-indigo-600 px-2 py-1 rounded-full">{p.categoria}</span></td>
                   <td className="px-5 py-4 font-bold text-slate-700 text-sm">{p.markup_sugerido}×</td>
                   <td className="px-5 py-4 font-bold text-slate-700 text-sm">R$ {Number(p.custo_mao_obra_hora).toFixed(2)}/h</td>
-                  <td className="px-5 py-4"><button onClick={()=>onEditar(p)} className="text-indigo-600 font-bold text-sm hover:underline">Editar / Composição</button></td>
+                  <td className="px-5 py-4"><div className="flex gap-2"><button onClick={()=>onEditar(p)} className="text-indigo-600 font-bold text-sm hover:underline">Editar / BOM</button><span className="text-slate-200">|</span><button onClick={()=>excluir(p.id)} className="text-rose-400 font-bold text-sm hover:text-rose-600 hover:underline">Excluir</button></div></td>
                 </tr>
               ))}
             </tbody>
@@ -652,42 +639,41 @@ function ProdutosView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=
 }
 
 /* ── VENDAS (resumo de orçamentos finalizados) ─────────────── */
-function VendasView() {
+function VendasView({key:_k}:{key?:number}={}) {
   const[pedidos,setPedidos]=useState<any[]>([]);
   const[loading,setLoading]=useState(true);
-  const load=useCallback(async()=>{
-    setLoading(true);
-    const{data}=await supabase.from('pedidos')
-      .select('*, kanban_status(*), clientes(nome)')
-      .order('updated_at',{ascending:false});
-    const finalizados=(data||[]).filter((p:any)=>p.kanban_status?.nome==='Finalizado');
-    setPedidos(finalizados);setLoading(false);
-  },[]);
+  const[filtro,setFiltro]=useState('');
+  const load=useCallback(async()=>{setLoading(true);const{data}=await supabase.from('pedidos').select('*, kanban_status(*), clientes(nome)').order('updated_at',{ascending:false});const fin=(data||[]).filter((p:any)=>p.kanban_status?.nome==='Finalizado');setPedidos(fin);setLoading(false);},[]);
   useEffect(()=>{load();},[load]);
-  const totalVendas=pedidos.reduce((a,p)=>a+Number(p.valor_total),0);
+  const excluir=async(id:string)=>{if(!confirm('Excluir esta venda do histórico?'))return;await supabase.from('pedidos').delete().eq('id',id);load();};
+  const filtrados=pedidos.filter(p=>{const nome=(p.clientes?.nome||p.cliente_nome_avulso||'').toLowerCase();return!filtro||nome.includes(filtro.toLowerCase())||p.codigo?.includes(filtro);});
+  const total=filtrados.reduce((a,p)=>a+Number(p.valor_total),0);
   if(loading)return<LoadingSpinner label="Carregando vendas..."/>;
   return(
     <div className="space-y-5">
       <div><h2 className="text-2xl md:text-3xl font-black">Vendas</h2><p className="text-slate-500 text-sm">Orçamentos com status <b>Finalizado</b></p></div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Total de Vendas</p><p className="text-2xl font-black text-indigo-600">R$ {totalVendas.toFixed(2)}</p></div>
-        <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Nº de Pedidos</p><p className="text-2xl font-black text-slate-700">{pedidos.length}</p></div>
-        <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Ticket Médio</p><p className="text-2xl font-black text-emerald-600">R$ {pedidos.length>0?(totalVendas/pedidos.length).toFixed(2):'0.00'}</p></div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Total de Vendas</p><p className="text-2xl font-black text-indigo-600">R$ {total.toFixed(2)}</p></div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Nº de Pedidos</p><p className="text-2xl font-black text-slate-700">{filtrados.length}</p></div>
+        <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Ticket Médio</p><p className="text-2xl font-black text-emerald-600">R$ {filtrados.length>0?(total/filtrados.length).toFixed(2):'0.00'}</p></div>
       </div>
-      {pedidos.length===0?(
-        <div className="bg-white rounded-3xl border border-slate-200 p-16 flex flex-col items-center gap-4 text-slate-300"><TrendingUp size={48}/><p className="font-black text-slate-400 text-lg uppercase tracking-widest">Nenhuma venda</p><p className="text-slate-400 text-sm">Mova um orçamento para "Finalizado" no CRM/Kanban ou use "Transformar em Venda".</p></div>
-      ):(
+      {/* Filtro */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 flex gap-3">
+        <div className="relative flex-1 max-w-sm"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input type="text" placeholder="Buscar por cliente ou código..." value={filtro} onChange={e=>setFiltro(e.target.value)} className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-400"/></div>
+        <button onClick={load} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl" title="Atualizar"><RefreshCw size={16}/></button>
+      </div>
+      {filtrados.length===0?<div className="bg-white rounded-3xl border border-slate-200 p-12 flex flex-col items-center gap-3 text-slate-300"><TrendingUp size={44}/><p className="font-black text-slate-400 text-lg uppercase">Nenhuma venda</p><p className="text-slate-400 text-sm">Mova um orçamento para Finalizado no CRM.</p></div>:(
         <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
-          <table className="w-full text-left min-w-[600px]">
+          <table className="w-full text-left min-w-[650px]">
             <thead><tr className="bg-slate-50 border-b border-slate-100">{['Código','Cliente','Valor Total','Data','Ações'].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {pedidos.map(p=>(
+              {filtrados.map(p=>(
                 <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-5 py-4 font-black text-indigo-600 text-sm">#{p.codigo}</td>
                   <td className="px-5 py-4 font-bold text-slate-800 text-sm">{p.clientes?.nome||p.cliente_nome_avulso||'—'}</td>
                   <td className="px-5 py-4 font-black text-emerald-600 text-sm">R$ {Number(p.valor_total).toFixed(2)}</td>
                   <td className="px-5 py-4 text-sm text-slate-500">{new Date(p.updated_at||p.created_at).toLocaleDateString('pt-BR')}</td>
-                  <td className="px-5 py-4"><span className="flex items-center gap-1 text-emerald-600 text-xs font-bold"><CheckCircle2 size={13}/>Finalizado</span></td>
+                  <td className="px-5 py-4"><div className="flex gap-2"><span className="flex items-center gap-1 text-emerald-600 text-xs font-bold"><CheckCircle2 size={12}/>Finalizado</span><span className="text-slate-200">|</span><button onClick={()=>excluir(p.id)} className="text-rose-400 font-bold text-sm hover:text-rose-600 hover:underline">Excluir</button></div></td>
                 </tr>
               ))}
             </tbody>
@@ -700,27 +686,30 @@ function VendasView() {
 
 /* ── CLIENTES ──────────────────────────────────────────────── */
 function ClientesView({searchQuery,onAdd,onVerPerfil}:{searchQuery:string;onAdd:()=>void;onVerPerfil:(c:any)=>void}) {
-  const{clientes,loading}=useClientes(searchQuery);
+  const{clientes,loading,refetch}=useClientes(searchQuery);
   const{user}=useAuth();
+  const[filtroStatus,setFiltroStatus]=useState('Todos');
+  const clientesFiltrados=clientes.filter(c=>filtroStatus==='Todos'||(!c.cidade&&filtroStatus==='Sem cidade'));
+  const excluir=async(id:string)=>{if(!confirm('Excluir este cliente?'))return;await supabase.from('clientes').delete().eq('id',id);refetch();};
   if(loading)return<LoadingSpinner label="Carregando clientes..."/>;
   return(
     <div className="space-y-5">
       <div className="flex justify-between items-end flex-wrap gap-3">
-        <div><h2 className="text-2xl md:text-3xl font-black">Clientes</h2><p className="text-slate-500 text-sm">{clientes.length} clientes</p></div>
+        <div><h2 className="text-2xl md:text-3xl font-black">Clientes</h2><p className="text-slate-500 text-sm">{clientes.length} clientes cadastrados</p></div>
         {user?.role==='admin'&&<button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Cliente</button>}
       </div>
       <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
-        <table className="w-full text-left min-w-[560px]">
+        <table className="w-full text-left min-w-[600px]">
           <thead><tr className="bg-slate-50 border-b border-slate-100">{['Cliente','CPF/CNPJ','Cidade','WhatsApp','Ações'].map(h=><th key={h} className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-slate-100">
-            {clientes.length===0&&<tr><td colSpan={5} className="px-6 py-10 text-center text-slate-400">Nenhum cliente.</td></tr>}
+            {clientes.length===0&&<tr><td colSpan={5} className="px-6 py-10 text-center text-slate-400">Nenhum cliente cadastrado.</td></tr>}
             {clientes.map(c=>(
               <tr key={c.id} className="hover:bg-slate-50 transition-colors">
                 <td className="px-6 py-4 font-bold text-slate-800 text-sm"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-black text-xs shrink-0">{c.nome.charAt(0).toUpperCase()}</div>{c.nome}</div></td>
                 <td className="px-6 py-4 text-sm text-slate-500">{c.cpf_cnpj||'—'}</td>
                 <td className="px-6 py-4 text-sm text-slate-500">{c.cidade||'—'}</td>
                 <td className="px-6 py-4">{c.whatsapp?<a href={`https://wa.me/55${c.whatsapp.replace(/\D/g,'')}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-emerald-600 font-bold text-sm hover:underline"><MessageSquare size={13}/>{c.whatsapp}</a>:<span className="text-slate-300 text-sm">—</span>}</td>
-                <td className="px-6 py-4"><button onClick={()=>onVerPerfil(c)} className="text-indigo-600 font-bold text-sm hover:underline">Ver Perfil</button></td>
+                <td className="px-6 py-4"><div className="flex gap-2"><button onClick={()=>onVerPerfil(c)} className="text-indigo-600 font-bold text-sm hover:underline">Perfil</button><span className="text-slate-200">|</span><button onClick={()=>excluir(c.id)} className="text-rose-400 font-bold text-sm hover:text-rose-600 hover:underline">Excluir</button></div></td>
               </tr>
             ))}
           </tbody>
@@ -732,7 +721,8 @@ function ClientesView({searchQuery,onAdd,onVerPerfil}:{searchQuery:string;onAdd:
 
 /* ── FORNECEDORES ──────────────────────────────────────────── */
 function FornecedoresView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=>void;onEditar:(f:any)=>void}) {
-  const{fornecedores,loading}=useFornecedores(searchQuery);
+  const{fornecedores,loading,refetch}=useFornecedores(searchQuery);
+  const excluir=async(id:string)=>{if(!confirm('Excluir este fornecedor?'))return;await supabase.from('fornecedores').delete().eq('id',id);refetch();};
   if(loading)return<LoadingSpinner label="Carregando fornecedores..."/>;
   return(
     <div className="space-y-5">
@@ -741,7 +731,7 @@ function FornecedoresView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd
         <button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Fornecedor</button>
       </div>
       <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
-        <table className="w-full text-left min-w-[560px]">
+        <table className="w-full text-left min-w-[600px]">
           <thead><tr className="bg-slate-50 border-b border-slate-100">{['Fornecedor','CNPJ','Contato','WhatsApp','Ações'].map(h=><th key={h} className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-slate-100">
             {fornecedores.length===0&&<tr><td colSpan={5} className="px-6 py-10 text-center text-slate-400">Nenhum fornecedor.</td></tr>}
@@ -751,7 +741,7 @@ function FornecedoresView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd
                 <td className="px-6 py-4 text-sm text-slate-500">{f.cnpj||'—'}</td>
                 <td className="px-6 py-4 text-sm text-slate-500">{f.contato||'—'}</td>
                 <td className="px-6 py-4">{f.whatsapp?<a href={`https://wa.me/55${f.whatsapp.replace(/\D/g,'')}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-emerald-600 font-bold text-sm hover:underline"><MessageSquare size={13}/>{f.whatsapp}</a>:<span className="text-slate-300 text-sm">—</span>}</td>
-                <td className="px-6 py-4"><button onClick={()=>onEditar(f)} className="text-indigo-600 font-bold text-sm hover:underline">Editar</button></td>
+                <td className="px-6 py-4"><div className="flex gap-2"><button onClick={()=>onEditar(f)} className="text-indigo-600 font-bold text-sm hover:underline">Editar</button><span className="text-slate-200">|</span><button onClick={()=>excluir(f.id)} className="text-rose-400 font-bold text-sm hover:text-rose-600 hover:underline">Excluir</button></div></td>
               </tr>
             ))}
           </tbody>
@@ -765,35 +755,45 @@ function FornecedoresView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd
 function ComprasView({searchQuery,onAdd,onAbrirDetalhe}:{searchQuery:string;onAdd:()=>void;onAbrirDetalhe:(c:Compra)=>void}) {
   const[compras,setCompras]=useState<Compra[]>([]);
   const[loading,setLoading]=useState(true);
+  const[filtroStatus,setFiltroStatus]=useState('Todos');
   const load=useCallback(async()=>{setLoading(true);const{data}=await supabase.from('compras').select('*').order('created_at',{ascending:false});setCompras(data||[]);setLoading(false);},[]);
   useEffect(()=>{load();},[load]);
-  const f=compras.filter(c=>c.fornecedor_nome?.toLowerCase().includes(searchQuery.toLowerCase()));
+  const excluir=async(id:string)=>{if(!confirm('Excluir esta compra?'))return;await supabase.from('compras').delete().eq('id',id);load();};
+  const filtradas=compras.filter(c=>{
+    if(filtroStatus!=='Todos'&&c.status!==filtroStatus)return false;
+    if(searchQuery&&!c.fornecedor_nome?.toLowerCase().includes(searchQuery.toLowerCase()))return false;
+    return true;
+  });
   if(loading)return<LoadingSpinner label="Carregando compras..."/>;
   return(
     <div className="space-y-5">
       <div className="flex justify-between items-end flex-wrap gap-3">
-        <div><h2 className="text-2xl md:text-3xl font-black">Compras</h2><p className="text-slate-500 text-sm">{f.length} registros</p></div>
+        <div><h2 className="text-2xl md:text-3xl font-black">Compras</h2><p className="text-slate-500 text-sm">{filtradas.length} de {compras.length} registros</p></div>
         <button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Nova Compra</button>
       </div>
-      {f.length===0?(
-        <div className="bg-white rounded-3xl border border-slate-200 p-16 flex flex-col items-center gap-4 text-slate-300"><Truck size={48}/><p className="font-black text-slate-400 text-lg uppercase tracking-widest">Nenhuma compra</p><p className="text-slate-400 text-sm">Clique em "Nova Compra" para registrar.</p></div>
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 flex gap-3 flex-wrap">
+        <select value={filtroStatus} onChange={e=>setFiltroStatus(e.target.value)} className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-400">
+          <option value="Todos">Todos os status</option>
+          {STATUS_COMPRA.map(s=><option key={s} value={s}>{s}</option>)}
+        </select>
+        {filtroStatus!=='Todos'&&<button onClick={()=>setFiltroStatus('Todos')} className="px-3 py-2 text-xs font-bold text-rose-500 hover:bg-rose-50 rounded-xl">Limpar</button>}
+        <button onClick={load} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl ml-auto" title="Atualizar"><RefreshCw size={16}/></button>
+      </div>
+      {filtradas.length===0?(
+        <div className="bg-white rounded-3xl border border-slate-200 p-12 flex flex-col items-center gap-3 text-slate-300"><Truck size={44}/><p className="font-black text-slate-400 text-lg uppercase">Nenhuma compra</p></div>
       ):(
         <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
-          <table className="w-full text-left min-w-[600px]">
+          <table className="w-full text-left min-w-[650px]">
             <thead><tr className="bg-slate-50 border-b border-slate-100">{['Fornecedor','Data','Nota Fiscal','Total','Status','Ações'].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {f.map(c=>(
+              {filtradas.map(c=>(
                 <tr key={c.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-5 py-4 font-bold text-slate-800 text-sm">{c.fornecedor_nome}</td>
                   <td className="px-5 py-4 text-sm text-slate-500">{c.data?new Date(c.data).toLocaleDateString('pt-BR'):'—'}</td>
                   <td className="px-5 py-4 text-sm text-slate-500">{c.nota_fiscal||'—'}</td>
                   <td className="px-5 py-4 font-black text-indigo-600 text-sm">R$ {Number(c.total||0).toFixed(2)}</td>
-                  <td className="px-5 py-4">
-                    <BadgeStatus status={c.status||'Pendente'} options={STATUS_COMPRA} onChange={async s=>{await supabase.from('compras').update({status:s}).eq('id',c.id);load();}}/>
-                  </td>
-                  <td className="px-5 py-4">
-                    <button onClick={()=>onAbrirDetalhe(c)} className="text-indigo-600 font-bold text-sm hover:underline">Detalhes</button>
-                  </td>
+                  <td className="px-5 py-4"><BadgeStatus status={c.status||'Pendente'} options={STATUS_COMPRA} onChange={async s=>{await supabase.from('compras').update({status:s}).eq('id',c.id);load();}}/></td>
+                  <td className="px-5 py-4"><div className="flex gap-2"><button onClick={()=>onAbrirDetalhe(c)} className="text-indigo-600 font-bold text-sm hover:underline">Detalhes</button><span className="text-slate-200">|</span><button onClick={()=>excluir(c.id)} className="text-rose-400 font-bold text-sm hover:text-rose-600 hover:underline">Excluir</button></div></td>
                 </tr>
               ))}
             </tbody>
@@ -1294,20 +1294,31 @@ function ModalEditarCP({conta,onClose}:{conta:any;onClose:()=>void}) {
 const CAT_CREDITO=['Venda','Recebimento','Aporte','Outros'];
 const CAT_DEBITO=['Aluguel','Salário','Material','Energia','Internet','Manutenção','Impostos','Outros'];
 
-function CaixaView({onNovo,onLancado}:{onNovo:()=>void;onLancado:()=>void}) {
+function CaixaView({onNovo}:{onNovo:()=>void}) {
+  const hoje=new Date();
+  const[de,setDe]=useState(hoje.toISOString().slice(0,7)+'-01');
+  const[ate,setAte]=useState(hoje.toISOString().slice(0,10));
   const[lancamentos,setLancamentos]=useState<any[]>([]);
   const[loading,setLoading]=useState(true);
   const[erroTabela,setErroTabela]=useState(false);
-  const[filtroMes,setFiltroMes]=useState(new Date().toISOString().slice(0,7));
+  const[filtroTipo,setFiltroTipo]=useState('Todos');
+
   const load=useCallback(async()=>{
     setLoading(true);setErroTabela(false);
     const{data,error}=await supabase.from('caixa').select('*').order('data',{ascending:false});
-    if(error){setErroTabela(true);}else setLancamentos(data||[]);
+    if(error)setErroTabela(true);else setLancamentos(data||[]);
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);
 
-  const filtrados=lancamentos.filter(l=>l.data?.startsWith(filtroMes));
+  const excluir=async(id:string)=>{if(!confirm('Excluir este lançamento?'))return;await supabase.from('caixa').delete().eq('id',id);load();};
+
+  const filtrados=lancamentos.filter(l=>{
+    if(l.data<de||l.data>ate)return false;
+    if(filtroTipo!=='Todos'&&l.tipo!==filtroTipo)return false;
+    return true;
+  });
+
   const totalCredito=filtrados.filter(l=>l.tipo==='credito').reduce((a,l)=>a+Number(l.valor),0);
   const totalDebito=filtrados.filter(l=>l.tipo==='debito').reduce((a,l)=>a+Number(l.valor),0);
   const saldo=totalCredito-totalDebito;
@@ -1316,23 +1327,42 @@ function CaixaView({onNovo,onLancado}:{onNovo:()=>void;onLancado:()=>void}) {
   return(
     <div className="space-y-5">
       <div className="flex justify-between items-end flex-wrap gap-3">
-        <div><h2 className="text-2xl md:text-3xl font-black">Controle de Caixa</h2><p className="text-slate-500 text-sm">Lançamentos manuais de créditos e débitos</p></div>
-        <div className="flex gap-2">
-          <input type="month" value={filtroMes} onChange={e=>setFiltroMes(e.target.value)} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-500"/>
+        <div><h2 className="text-2xl md:text-3xl font-black">Controle de Caixa</h2><p className="text-slate-500 text-sm">{filtrados.length} lançamentos no período</p></div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2">
+            <span className="text-xs font-bold text-slate-400 uppercase">De</span>
+            <input type="date" value={de} onChange={e=>setDe(e.target.value)} className="text-sm outline-none bg-transparent"/>
+          </div>
+          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2">
+            <span className="text-xs font-bold text-slate-400 uppercase">Até</span>
+            <input type="date" value={ate} onChange={e=>setAte(e.target.value)} className="text-sm outline-none bg-transparent"/>
+          </div>
           <button onClick={load} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl" title="Atualizar"><RefreshCw size={17}/></button>
           <button onClick={onNovo} className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Lançamento</button>
         </div>
       </div>
       {erroTabela&&<ErroTabela tabela="caixa"/>}
+
+      {/* Resumo */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase mb-1">Entradas</p><p className="text-2xl font-black text-emerald-600">R$ {totalCredito.toFixed(2)}</p></div>
         <div className="bg-rose-50 border border-rose-100 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase mb-1">Saídas</p><p className="text-2xl font-black text-rose-600">R$ {totalDebito.toFixed(2)}</p></div>
         <div className={cn('border rounded-2xl p-5',saldo>=0?'bg-indigo-50 border-indigo-100':'bg-rose-50 border-rose-100')}>
           <p className="text-xs font-black text-slate-400 uppercase mb-1">Saldo do Período</p>
-          <p className={cn('text-2xl font-black',saldo>=0?'text-indigo-600':'text-rose-600')}>R$ {saldo.toFixed(2)}</p>
+          <p className={cn('text-2xl font-black',saldo>=0?'text-indigo-600':'text-rose-600')}>{saldo>=0?'+':''}R$ {saldo.toFixed(2)}</p>
         </div>
       </div>
-      {!erroTabela&&filtrados.length===0&&<div className="bg-white rounded-3xl border border-slate-200 p-16 flex flex-col items-center gap-4 text-slate-300"><DollarSign size={48}/><p className="font-black text-slate-400 text-lg uppercase tracking-widest">Nenhum lançamento</p><p className="text-slate-400 text-sm">Clique em "Novo Lançamento" para registrar.</p></div>}
+
+      {/* Filtro tipo */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 flex gap-3">
+        {['Todos','credito','debito'].map(t=>(
+          <button key={t} onClick={()=>setFiltroTipo(t)} className={cn('px-4 py-2 rounded-xl text-sm font-bold transition-all',filtroTipo===t?'bg-indigo-600 text-white':'bg-slate-100 text-slate-500 hover:bg-slate-200')}>
+            {t==='Todos'?'Todos':t==='credito'?'Créditos':'Débitos'}
+          </button>
+        ))}
+      </div>
+
+      {!erroTabela&&filtrados.length===0&&<div className="bg-white rounded-3xl border border-slate-200 p-12 flex flex-col items-center gap-3 text-slate-300"><DollarSign size={44}/><p className="font-black text-slate-400 text-lg uppercase">Nenhum lançamento</p><p className="text-slate-400 text-sm">Ajuste o período ou clique em "Novo Lançamento".</p></div>}
       {filtrados.length>0&&(
         <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
           <table className="w-full text-left min-w-[600px]">
@@ -1345,9 +1375,7 @@ function CaixaView({onNovo,onLancado}:{onNovo:()=>void;onLancado:()=>void}) {
                   <td className="px-5 py-4 text-sm text-slate-500">{l.categoria}</td>
                   <td className="px-5 py-4 text-sm text-slate-700 font-medium max-w-[200px] truncate">{l.descricao}</td>
                   <td className={cn('px-5 py-4 font-black text-sm',l.tipo==='credito'?'text-emerald-600':'text-rose-600')}>{l.tipo==='credito'?'+':'−'} R$ {Number(l.valor).toFixed(2)}</td>
-                  <td className="px-5 py-4">
-                    <button onClick={async()=>{if(confirm('Excluir este lançamento?')){await supabase.from('caixa').delete().eq('id',l.id);load();}}} className="text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={14}/></button>
-                  </td>
+                  <td className="px-5 py-4"><button onClick={()=>excluir(l.id)} className="text-slate-300 hover:text-rose-500 transition-colors"><Trash2 size={14}/></button></td>
                 </tr>
               ))}
             </tbody>
@@ -1587,56 +1615,66 @@ function ModalNovaContaPagar({onClose}:{onClose:()=>void}) {
 
 /* ── PAINEL DE LUCRATIVIDADE ───────────────────────────────── */
 function LucratividadeView() {
-  const hoje = new Date();
-  const mesAtual = hoje.toISOString().slice(0,7);
-  const[de,setDe]=useState(mesAtual+'-01');
+  const hoje=new Date();
+  const[de,setDe]=useState(hoje.toISOString().slice(0,7)+'-01');
   const[ate,setAte]=useState(hoje.toISOString().slice(0,10));
-  const[dados,setDados]=useState<any>({});
-  const[loading,setLoading]=useState(true);
+  const[dados,setDados]=useState<any>(null);
+  const[loading,setLoading]=useState(false);
 
   const calcular=useCallback(async()=>{
     setLoading(true);
-    const [rVendas,rCR,rCP,rCaixa]=await Promise.all([
-      supabase.from('pedidos').select('valor_total,created_at,kanban_status(nome)').gte('created_at',de+'T00:00:00').lte('created_at',ate+'T23:59:59'),
-      supabase.from('contas_receber').select('valor,status,data_vencimento').gte('data_vencimento',de).lte('data_vencimento',ate),
-      supabase.from('contas_pagar').select('valor,status,data_vencimento').gte('data_vencimento',de).lte('data_vencimento',ate),
-      supabase.from('caixa').select('tipo,valor,data,categoria').gte('data',de).lte('data',ate),
-    ]);
-    const vendas=(rVendas.data||[]).filter((p:any)=>p.kanban_status?.nome==='Finalizado');
+    // 1. Vendas finalizadas no período
+    const{data:pedidosData}=await supabase
+      .from('pedidos')
+      .select('id,valor_total,created_at,updated_at,kanban_status(nome),clientes(nome),cliente_nome_avulso')
+      .gte('updated_at',de+'T00:00:00')
+      .lte('updated_at',ate+'T23:59:59');
+    const vendas=(pedidosData||[]).filter((p:any)=>p.kanban_status?.nome==='Finalizado');
     const receitaVendas=vendas.reduce((a:number,p:any)=>a+Number(p.valor_total),0);
-    const cr=rCR.data||[];
-    const cp=rCP.data||[];
-    const cx=rCaixa.data||[];
-    const crRecebido=cr.filter((c:any)=>c.status==='Recebido').reduce((a:number,c:any)=>a+Number(c.valor),0);
-    const crAguardando=cr.filter((c:any)=>c.status==='Aguardando').reduce((a:number,c:any)=>a+Number(c.valor),0);
-    const cpPago=cp.filter((c:any)=>c.status==='Pago').reduce((a:number,c:any)=>a+Number(c.valor),0);
-    const cpAguardando=cp.filter((c:any)=>c.status==='Aguardando').reduce((a:number,c:any)=>a+Number(c.valor),0);
-    const cxCredito=cx.filter((l:any)=>l.tipo==='credito').reduce((a:number,l:any)=>a+Number(l.valor),0);
-    const cxDebito=cx.filter((l:any)=>l.tipo==='debito').reduce((a:number,l:any)=>a+Number(l.valor),0);
-    const totalEntradas=crRecebido+cxCredito;
-    const totalSaidas=cpPago+cxDebito;
-    const lucroLiquido=totalEntradas-totalSaidas;
-    // Categorias de caixa
-    const catMap:Record<string,{credito:number;debito:number}>={}; 
-    cx.forEach((l:any)=>{if(!catMap[l.categoria])catMap[l.categoria]={credito:0,debito:0};catMap[l.categoria][l.tipo as 'credito'|'debito']+=Number(l.valor);});
-    setDados({receitaVendas,pedidosFin:vendas.length,crRecebido,crAguardando,cpPago,cpAguardando,cxCredito,cxDebito,totalEntradas,totalSaidas,lucroLiquido,catMap,cxLancamentos:cx.length});
+    const pedidosIds=vendas.map((p:any)=>p.id);
+
+    // 2. Custo dos insumos usados nesses pedidos (via itens_pedido → composicao_produtos → insumos)
+    let custoInsumos=0;
+    let detalhesCusto:any[]=[];
+    if(pedidosIds.length>0){
+      const{data:itens}=await supabase
+        .from('itens_pedido')
+        .select('produto_id,quantidade,pedido_id')
+        .in('pedido_id',pedidosIds);
+      if(itens&&itens.length>0){
+        const prodIds=[...new Set(itens.map((i:any)=>i.produto_id).filter(Boolean))];
+        const{data:composicoes}=await supabase
+          .from('composicao_produtos')
+          .select('produto_id,quantidade_insumo,percentual_desperdicio,insumos(nome,custo_unitario,unidade_medida)')
+          .in('produto_id',prodIds);
+        // For each item sold, calculate insumo cost
+        (composicoes||[]).forEach((comp:any)=>{
+          const qtdVendida=itens.filter((i:any)=>i.produto_id===comp.produto_id).reduce((a:number,i:any)=>a+i.quantidade,0);
+          const custo=Number(comp.insumos?.custo_unitario||0)*Number(comp.quantidade_insumo||0)*(1+Number(comp.percentual_desperdicio||0)/100)*qtdVendida;
+          custoInsumos+=custo;
+          if(custo>0)detalhesCusto.push({nome:comp.insumos?.nome||'—',custo,qtd:qtdVendida});
+        });
+      }
+    }
+
+    const lucroBruto=receitaVendas-custoInsumos;
+    const margemBruta=receitaVendas>0?(lucroBruto/receitaVendas)*100:0;
+
+    // 3. Top clientes
+    const clienteMap:Record<string,number>={};
+    vendas.forEach((p:any)=>{const n=p.clientes?.nome||p.cliente_nome_avulso||'Avulso';clienteMap[n]=(clienteMap[n]||0)+Number(p.valor_total);});
+    const topClientes=Object.entries(clienteMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+    setDados({receitaVendas,custoInsumos,lucroBruto,margemBruta,nVendas:vendas.length,detalhesCusto,topClientes,vendas});
     setLoading(false);
   },[de,ate]);
 
   useEffect(()=>{calcular();},[calcular]);
 
-  const Card=({label,value,color,sub}:{label:string;value:string;color:string;sub?:string})=>(
-    <div className="bg-white border border-slate-200 rounded-2xl p-5">
-      <p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">{label}</p>
-      <p className={cn('text-2xl font-black',color)}>{value}</p>
-      {sub&&<p className="text-xs text-slate-400 mt-1">{sub}</p>}
-    </div>
-  );
-
   return(
     <div className="space-y-6">
       <div className="flex justify-between items-end flex-wrap gap-3">
-        <div><h2 className="text-2xl md:text-3xl font-black">Lucratividade</h2><p className="text-slate-500 text-sm">Consolidado financeiro do período</p></div>
+        <div><h2 className="text-2xl md:text-3xl font-black">Lucratividade</h2><p className="text-slate-500 text-sm">Receita de vendas vs custo de insumos por período</p></div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2">
             <span className="text-xs font-bold text-slate-400 uppercase">De</span>
@@ -1652,55 +1690,108 @@ function LucratividadeView() {
         </div>
       </div>
 
-      {loading?<LoadingSpinner label="Calculando..."/>:(
+      {loading?<LoadingSpinner label="Calculando lucratividade..."/>:!dados?null:(
         <>
         {/* Resultado principal */}
-        <div className={cn('rounded-3xl p-6 text-center',dados.lucroLiquido>=0?'bg-emerald-600':'bg-rose-600')}>
-          <p className="text-emerald-100 font-black text-sm uppercase tracking-widest mb-1">Lucro Líquido do Período</p>
-          <p className="text-5xl font-black text-white">R$ {Math.abs(dados.lucroLiquido||0).toFixed(2)}</p>
-          <p className="text-emerald-100 text-sm mt-2">{dados.lucroLiquido>=0?'▲ Resultado positivo':'▼ Resultado negativo'}</p>
-        </div>
-
-        {/* Cards resumo */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card label="Vendas Finalizadas" value={`R$ ${(dados.receitaVendas||0).toFixed(2)}`} color="text-indigo-600" sub={`${dados.pedidosFin||0} pedido(s)`}/>
-          <Card label="Recebido (CR)" value={`R$ ${(dados.crRecebido||0).toFixed(2)}`} color="text-emerald-600" sub={`A receber: R$ ${(dados.crAguardando||0).toFixed(2)}`}/>
-          <Card label="Pago (CP)" value={`R$ ${(dados.cpPago||0).toFixed(2)}`} color="text-rose-600" sub={`A pagar: R$ ${(dados.cpAguardando||0).toFixed(2)}`}/>
-          <Card label="Lançamentos Caixa" value={`${dados.cxLancamentos||0}`} color="text-slate-700" sub={`Créditos: R$ ${(dados.cxCredito||0).toFixed(2)}`}/>
-        </div>
-
-        {/* Entradas vs Saídas */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-white rounded-3xl border border-slate-200 p-6">
-            <h3 className="font-black text-slate-800 mb-4 flex items-center gap-2"><TrendingUp size={18} className="text-emerald-500"/>Total de Entradas</h3>
-            <p className="text-3xl font-black text-emerald-600 mb-4">R$ {(dados.totalEntradas||0).toFixed(2)}</p>
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm"><span className="text-slate-500">Contas Recebidas</span><span className="font-bold text-slate-700">R$ {(dados.crRecebido||0).toFixed(2)}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-slate-500">Créditos no Caixa</span><span className="font-bold text-slate-700">R$ {(dados.cxCredito||0).toFixed(2)}</span></div>
+        <div className={cn('rounded-3xl p-6',dados.lucroBruto>=0?'bg-emerald-600':'bg-rose-600')}>
+          <div className="flex flex-wrap justify-between items-start gap-4">
+            <div>
+              <p className="text-emerald-100 font-black text-sm uppercase tracking-widest mb-1">Lucro Bruto do Período</p>
+              <p className="text-5xl font-black text-white">R$ {Math.abs(dados.lucroBruto).toFixed(2)}</p>
+              <p className="text-emerald-100 text-sm mt-2">{dados.lucroBruto>=0?'▲ Resultado positivo':'▼ Resultado negativo'}</p>
             </div>
-          </div>
-          <div className="bg-white rounded-3xl border border-slate-200 p-6">
-            <h3 className="font-black text-slate-800 mb-4 flex items-center gap-2"><TrendingDown size={18} className="text-rose-500"/>Total de Saídas</h3>
-            <p className="text-3xl font-black text-rose-600 mb-4">R$ {(dados.totalSaidas||0).toFixed(2)}</p>
-            <div className="space-y-2">
-              <div className="flex justify-between text-sm"><span className="text-slate-500">Contas Pagas</span><span className="font-bold text-slate-700">R$ {(dados.cpPago||0).toFixed(2)}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-slate-500">Débitos no Caixa</span><span className="font-bold text-slate-700">R$ {(dados.cxDebito||0).toFixed(2)}</span></div>
+            <div className="bg-white/20 rounded-2xl px-5 py-4 text-white text-center">
+              <p className="text-xs font-black uppercase tracking-wider opacity-80 mb-1">Margem Bruta</p>
+              <p className="text-3xl font-black">{dados.margemBruta.toFixed(1)}%</p>
             </div>
           </div>
         </div>
 
-        {/* Categorias do caixa */}
-        {Object.keys(dados.catMap||{}).length>0&&(
-          <div className="bg-white rounded-3xl border border-slate-200 p-6">
-            <h3 className="font-black text-slate-800 mb-4">Lançamentos por Categoria</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {Object.entries(dados.catMap||{}).map(([cat,vals]:any)=>(
-                <div key={cat} className="bg-slate-50 rounded-2xl p-3">
-                  <p className="text-xs font-black text-slate-500 uppercase mb-2">{cat}</p>
-                  {vals.credito>0&&<p className="text-xs text-emerald-600 font-bold">+R$ {vals.credito.toFixed(2)}</p>}
-                  {vals.debito>0&&<p className="text-xs text-rose-600 font-bold">-R$ {vals.debito.toFixed(2)}</p>}
-                </div>
-              ))}
+        {/* Cards KPIs */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="bg-white border border-slate-200 rounded-2xl p-5">
+            <p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Receita de Vendas</p>
+            <p className="text-2xl font-black text-emerald-600">R$ {dados.receitaVendas.toFixed(2)}</p>
+            <p className="text-xs text-slate-400 mt-1">{dados.nVendas} venda(s) finalizada(s)</p>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-2xl p-5">
+            <p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Custo de Insumos</p>
+            <p className="text-2xl font-black text-rose-600">R$ {dados.custoInsumos.toFixed(2)}</p>
+            <p className="text-xs text-slate-400 mt-1">Com % de desperdício</p>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-2xl p-5">
+            <p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Ticket Médio</p>
+            <p className="text-2xl font-black text-indigo-600">R$ {dados.nVendas>0?(dados.receitaVendas/dados.nVendas).toFixed(2):'0.00'}</p>
+            <p className="text-xs text-slate-400 mt-1">Por pedido finalizado</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* Custo por insumo */}
+          {dados.detalhesCusto.length>0&&(
+            <div className="bg-white rounded-3xl border border-slate-200 p-6">
+              <h3 className="font-black text-slate-800 mb-4 flex items-center gap-2"><Package size={18} className="text-rose-500"/>Custo por Insumo</h3>
+              <div className="space-y-3">
+                {dados.detalhesCusto.sort((a:any,b:any)=>b.custo-a.custo).slice(0,8).map((d:any,i:number)=>{
+                  const pct=dados.custoInsumos>0?d.custo/dados.custoInsumos*100:0;
+                  return(
+                    <div key={i}>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-sm font-bold text-slate-700 truncate max-w-[180px]">{d.nome}</span>
+                        <span className="text-sm font-black text-rose-600 ml-2">R$ {d.custo.toFixed(2)}</span>
+                      </div>
+                      <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-rose-400 rounded-full transition-all" style={{width:`${pct}%`}}/>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Top clientes */}
+          {dados.topClientes.length>0&&(
+            <div className="bg-white rounded-3xl border border-slate-200 p-6">
+              <h3 className="font-black text-slate-800 mb-4 flex items-center gap-2"><Users size={18} className="text-indigo-500"/>Top Clientes</h3>
+              <div className="space-y-3">
+                {dados.topClientes.map(([nome,val]:any,i:number)=>{
+                  const pct=dados.receitaVendas>0?val/dados.receitaVendas*100:0;
+                  return(
+                    <div key={i}>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-sm font-bold text-slate-700 truncate max-w-[180px]">{nome}</span>
+                        <span className="text-sm font-black text-emerald-600 ml-2">R$ {Number(val).toFixed(2)}</span>
+                      </div>
+                      <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-indigo-400 rounded-full transition-all" style={{width:`${pct}%`}}/>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Lista de vendas */}
+        {dados.vendas.length>0&&(
+          <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
+            <div className="p-5 border-b border-slate-100"><h3 className="font-black text-slate-800">Vendas do Período</h3></div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left min-w-[500px]">
+                <thead><tr className="bg-slate-50 border-b border-slate-100">{['Código','Cliente','Valor','Data'].map(h=><th key={h} className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
+                <tbody className="divide-y divide-slate-100">
+                  {dados.vendas.map((p:any)=>(
+                    <tr key={p.id} className="hover:bg-slate-50">
+                      <td className="px-5 py-3 font-black text-indigo-600 text-sm">#{p.codigo}</td>
+                      <td className="px-5 py-3 font-bold text-slate-800 text-sm">{p.clientes?.nome||p.cliente_nome_avulso||'—'}</td>
+                      <td className="px-5 py-3 font-black text-emerald-600 text-sm">R$ {Number(p.valor_total).toFixed(2)}</td>
+                      <td className="px-5 py-3 text-sm text-slate-500">{new Date(p.updated_at||p.created_at).toLocaleDateString('pt-BR')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
@@ -1708,6 +1799,138 @@ function LucratividadeView() {
       )}
     </div>
   );
+}
+
+/* ── MODAL EDITAR CLIENTE ──────────────────────────────────── */
+function ModalEditarCliente({cliente,onClose}:{cliente:any;onClose:()=>void}) {
+  const[form,setForm]=useState({nome:cliente.nome||'',cpf_cnpj:cliente.cpf_cnpj||'',email:cliente.email||'',telefone:cliente.telefone||'',whatsapp:cliente.whatsapp||'',cidade:cliente.cidade||'',estado:cliente.estado||'',observacoes:cliente.observacoes||''});
+  const[salvando,setSalvando]=useState(false);const[toast,setToast]=useState('');
+  const salvar=async()=>{setSalvando(true);await supabase.from('clientes').update(form).eq('id',cliente.id);setSalvando(false);setToast('Cliente atualizado! ✅');setTimeout(onClose,1400);};
+  return(<><ModalWrapper title={`Editar — ${cliente.nome}`} onClose={onClose}>
+    <Campo label="Nome *"><input type="text" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} className={inputClass}/></Campo>
+    <div className="grid grid-cols-2 gap-4"><Campo label="CPF/CNPJ"><input type="text" value={form.cpf_cnpj} onChange={e=>setForm({...form,cpf_cnpj:e.target.value})} className={inputClass}/></Campo><Campo label="WhatsApp"><input type="text" value={form.whatsapp} onChange={e=>setForm({...form,whatsapp:e.target.value})} className={inputClass}/></Campo></div>
+    <div className="grid grid-cols-2 gap-4"><Campo label="E-mail"><input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} className={inputClass}/></Campo><Campo label="Telefone"><input type="text" value={form.telefone} onChange={e=>setForm({...form,telefone:e.target.value})} className={inputClass}/></Campo></div>
+    <div className="grid grid-cols-2 gap-4"><Campo label="Cidade"><input type="text" value={form.cidade} onChange={e=>setForm({...form,cidade:e.target.value})} className={inputClass}/></Campo><Campo label="Estado"><input type="text" maxLength={2} value={form.estado} onChange={e=>setForm({...form,estado:e.target.value.toUpperCase()})} className={inputClass}/></Campo></div>
+    <BotaoSalvar onClick={salvar} loading={salvando} label="Salvar Alterações"/>
+  </ModalWrapper><AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
+}
+
+/* ── MODAL PERFIL CLIENTE ──────────────────────────────────── */
+function ModalPerfilCliente({cliente,onClose,onEditar}:{cliente:any;onClose:()=>void;onEditar:(c:any)=>void}) {
+  const[pedidos,setPedidos]=useState<any[]>([]);
+  const[loading,setLoading]=useState(true);
+  useEffect(()=>{supabase.from('pedidos').select('*,kanban_status(nome)').eq('cliente_id',cliente.id).order('created_at',{ascending:false}).then(({data})=>{setPedidos(data||[]);setLoading(false);});},[cliente.id]);
+  const total=pedidos.reduce((a,p)=>a+Number(p.valor_total),0);
+  return(
+    <ModalWrapper title={`Perfil — ${cliente.nome}`} onClose={onClose} size="lg">
+      <div className="grid grid-cols-2 gap-4 bg-slate-50 rounded-2xl p-4">
+        <div><p className="text-xs text-slate-400 font-bold uppercase mb-1">WhatsApp</p>{cliente.whatsapp?<a href={`https://wa.me/55${cliente.whatsapp.replace(/\D/g,'')}`} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-emerald-600 font-bold text-sm hover:underline"><MessageSquare size={13}/>{cliente.whatsapp}</a>:<p className="text-sm text-slate-500">—</p>}</div>
+        <div><p className="text-xs text-slate-400 font-bold uppercase mb-1">E-mail</p><p className="font-bold text-slate-800 text-sm">{cliente.email||'—'}</p></div>
+        <div><p className="text-xs text-slate-400 font-bold uppercase mb-1">CPF/CNPJ</p><p className="font-bold text-slate-800 text-sm">{cliente.cpf_cnpj||'—'}</p></div>
+        <div><p className="text-xs text-slate-400 font-bold uppercase mb-1">Cidade</p><p className="font-bold text-slate-800 text-sm">{cliente.cidade?`${cliente.cidade}/${cliente.estado||''}`:'—'}</p></div>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-indigo-50 rounded-2xl p-4"><p className="text-xs text-slate-400 font-bold uppercase mb-1">Pedidos</p><p className="text-xl font-black text-indigo-600">{pedidos.length}</p></div>
+        <div className="bg-emerald-50 rounded-2xl p-4"><p className="text-xs text-slate-400 font-bold uppercase mb-1">Total Gasto</p><p className="text-xl font-black text-emerald-600">R$ {total.toFixed(2)}</p></div>
+        <div className="bg-amber-50 rounded-2xl p-4"><p className="text-xs text-slate-400 font-bold uppercase mb-1">Ticket Médio</p><p className="text-xl font-black text-amber-600">R$ {pedidos.length>0?(total/pedidos.length).toFixed(2):'0.00'}</p></div>
+      </div>
+      {loading?<LoadingSpinner label="Carregando..."/>:(
+        pedidos.length>0&&<div className="border border-slate-200 rounded-2xl overflow-hidden">
+          <table className="w-full text-sm"><thead><tr className="bg-slate-50 border-b border-slate-100"><th className="px-4 py-3 text-left text-[10px] font-black text-slate-400 uppercase">Código</th><th className="px-4 py-3 text-left text-[10px] font-black text-slate-400 uppercase">Status</th><th className="px-4 py-3 text-right text-[10px] font-black text-slate-400 uppercase">Valor</th><th className="px-4 py-3 text-right text-[10px] font-black text-slate-400 uppercase">Data</th></tr></thead>
+          <tbody className="divide-y divide-slate-100">{pedidos.map(p=><tr key={p.id} className="hover:bg-slate-50"><td className="px-4 py-3 font-bold text-indigo-600">#{p.codigo}</td><td className="px-4 py-3"><span className="text-[10px] font-black uppercase bg-slate-100 text-slate-600 px-2 py-1 rounded-full">{p.kanban_status?.nome||'—'}</span></td><td className="px-4 py-3 text-right font-black text-slate-700">R$ {Number(p.valor_total).toFixed(2)}</td><td className="px-4 py-3 text-right text-slate-400">{new Date(p.created_at).toLocaleDateString('pt-BR')}</td></tr>)}</tbody></table>
+        </div>
+      )}
+      <button onClick={()=>{onClose();setTimeout(()=>onEditar(cliente),100);}} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold text-sm shadow-lg transition-all">✏️ Editar Dados do Cliente</button>
+    </ModalWrapper>
+  );
+}
+
+/* ── MODAL EDITAR INSUMO ───────────────────────────────────── */
+function ModalEditarInsumo({insumo,onClose}:{insumo:any;onClose:()=>void}) {
+  const[form,setForm]=useState({nome:insumo.nome||'',tipo:insumo.tipo||'papel',unidade_medida:insumo.unidade_medida||'unidade',custo_unitario:String(insumo.custo_unitario||0),estoque_atual:String(insumo.estoque_atual||0),estoque_minimo:String(insumo.estoque_minimo||0),gramatura:String(insumo.gramatura||''),observacoes:insumo.observacoes||''});
+  const[salvando,setSalvando]=useState(false);const[toast,setToast]=useState('');
+  const salvar=async()=>{setSalvando(true);await supabase.from('insumos').update({nome:form.nome,tipo:form.tipo,unidade_medida:form.unidade_medida,custo_unitario:Number(form.custo_unitario),estoque_atual:Number(form.estoque_atual),estoque_minimo:Number(form.estoque_minimo),gramatura:form.gramatura?Number(form.gramatura):null,observacoes:form.observacoes||null,updated_at:new Date().toISOString()}).eq('id',insumo.id);setSalvando(false);setToast('Insumo atualizado! ✅');setTimeout(onClose,1400);};
+  return(<><ModalWrapper title={`Editar Insumo — ${insumo.nome}`} onClose={onClose}>
+    <Campo label="Nome *"><input type="text" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} className={inputClass}/></Campo>
+    <div className="grid grid-cols-2 gap-4"><Campo label="Tipo"><select value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value})} className={inputClass}>{['papel','tinta','fita','cola','vinil','embalagem','outro'].map(t=><option key={t} value={t}>{t}</option>)}</select></Campo><Campo label="Unidade"><select value={form.unidade_medida} onChange={e=>setForm({...form,unidade_medida:e.target.value})} className={inputClass}>{['folha','ml','metro','unidade','kg','litro'].map(u=><option key={u} value={u}>{u}</option>)}</select></Campo></div>
+    <div className="grid grid-cols-3 gap-3"><Campo label="Custo Unit. (R$)"><input type="number" step="0.0001" min="0" value={form.custo_unitario} onChange={e=>setForm({...form,custo_unitario:e.target.value})} className={inputClass}/></Campo><Campo label="Estoque Atual"><input type="number" step="0.01" min="0" value={form.estoque_atual} onChange={e=>setForm({...form,estoque_atual:e.target.value})} className={inputClass}/></Campo><Campo label="Estoque Mínimo"><input type="number" step="0.01" min="0" value={form.estoque_minimo} onChange={e=>setForm({...form,estoque_minimo:e.target.value})} className={inputClass}/></Campo></div>
+    <Campo label="Gramatura g/m² (papéis)"><input type="number" step="0.1" value={form.gramatura} onChange={e=>setForm({...form,gramatura:e.target.value})} className={inputClass}/></Campo>
+    <BotaoSalvar onClick={salvar} loading={salvando} label="Salvar Alterações"/>
+  </ModalWrapper><AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
+}
+
+/* ── MODAL EDITAR PRODUTO + COMPOSIÇÃO (BOM) ───────────────── */
+function ModalEditarProduto({produto,onClose}:{produto:any;onClose:()=>void}) {
+  const[form,setForm]=useState({nome:produto.nome||'',descricao:produto.descricao||'',categoria:produto.categoria||'kit',markup_sugerido:String(produto.markup_sugerido||2.5),custo_mao_obra_hora:String(produto.custo_mao_obra_hora||25)});
+  const[bom,setBom]=useState<any[]>([]);
+  const[insumosList,setInsumosList]=useState<any[]>([]);
+  const[buscaIns,setBuscaIns]=useState('');const[showIns,setShowIns]=useState(false);const insRef=useRef<HTMLDivElement>(null);
+  const[salvando,setSalvando]=useState(false);const[toast,setToast]=useState('');
+  useEffect(()=>{
+    supabase.from('composicao_produtos').select('*,insumos(nome,unidade_medida,custo_unitario)').eq('produto_id',produto.id).then(({data})=>setBom(data||[]));
+    supabase.from('insumos').select('*').eq('ativo',true).order('nome').then(({data})=>setInsumosList(data||[]));
+  },[produto.id]);
+  useEffect(()=>{const h=(e:MouseEvent)=>{if(insRef.current&&!insRef.current.contains(e.target as Node))setShowIns(false);};document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);},[]);
+  const insFilt=insumosList.filter(i=>i.nome.toLowerCase().includes(buscaIns.toLowerCase())&&buscaIns.length>0).slice(0,6);
+  const addBomItem=(ins:any)=>{setBom(prev=>[...prev,{id:'new-'+crypto.randomUUID(),produto_id:produto.id,insumo_id:ins.id,maquina_id:null,quantidade_insumo:1,percentual_desperdicio:5,insumos:{nome:ins.nome,unidade_medida:ins.unidade_medida,custo_unitario:ins.custo_unitario},_novo:true}]);setBuscaIns('');setShowIns(false);};
+  const updBom=(id:string,k:string,v:any)=>setBom(prev=>prev.map(b=>b.id===id?{...b,[k]:v,_dirty:true}:b));
+  const delBom=async(item:any)=>{if(!item._novo)await supabase.from('composicao_produtos').delete().eq('id',item.id);setBom(prev=>prev.filter(b=>b.id!==item.id));};
+  const custoTotal=bom.reduce((a,b)=>{const ins=insumosList.find(i=>i.id===b.insumo_id)||b.insumos;return a+(Number(ins?.custo_unitario||0)*Number(b.quantidade_insumo||0)*(1+Number(b.percentual_desperdicio||0)/100));},0);
+  const salvar=async()=>{
+    setSalvando(true);
+    await supabase.from('produtos').update({nome:form.nome,descricao:form.descricao||null,categoria:form.categoria,markup_sugerido:Number(form.markup_sugerido),custo_mao_obra_hora:Number(form.custo_mao_obra_hora),updated_at:new Date().toISOString()}).eq('id',produto.id);
+    const novos=bom.filter(b=>b._novo);
+    if(novos.length>0)await supabase.from('composicao_produtos').insert(novos.map(({id,_novo,_dirty,insumos:ins,...rest})=>rest));
+    const editados=bom.filter(b=>b._dirty&&!b._novo);
+    for(const b of editados){const{_dirty,insumos:ins,...rest}=b;await supabase.from('composicao_produtos').update({quantidade_insumo:rest.quantidade_insumo,percentual_desperdicio:rest.percentual_desperdicio}).eq('id',rest.id);}
+    setSalvando(false);setToast('Produto salvo! ✅');setTimeout(onClose,1400);
+  };
+  return(<><ModalWrapper title={`Editar Produto — ${produto.nome}`} onClose={onClose} size="lg">
+    <Campo label="Nome *"><input type="text" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} className={inputClass}/></Campo>
+    <Campo label="Descrição"><input type="text" value={form.descricao} onChange={e=>setForm({...form,descricao:e.target.value})} className={inputClass}/></Campo>
+    <div className="grid grid-cols-3 gap-3"><Campo label="Categoria"><select value={form.categoria} onChange={e=>setForm({...form,categoria:e.target.value})} className={inputClass}>{['kit','adesivo','impresso','personalizado'].map(c=><option key={c} value={c}>{c}</option>)}</select></Campo><Campo label="Markup (×)"><input type="number" step="0.1" min="1" value={form.markup_sugerido} onChange={e=>setForm({...form,markup_sugerido:e.target.value})} className={inputClass}/></Campo><Campo label="MO/hora (R$)"><input type="number" step="0.5" min="0" value={form.custo_mao_obra_hora} onChange={e=>setForm({...form,custo_mao_obra_hora:e.target.value})} className={inputClass}/></Campo></div>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between"><p className="text-xs font-black text-slate-500 uppercase tracking-wider">Composição de Insumos (BOM)</p>{custoTotal>0&&<span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full">Custo: R$ {custoTotal.toFixed(4)} → Venda: R$ {(custoTotal*Number(form.markup_sugerido)).toFixed(2)}</span>}</div>
+      <div className="relative" ref={insRef}>
+        <input type="text" placeholder="Adicionar insumo..." className={inputClass} value={buscaIns} onChange={e=>{setBuscaIns(e.target.value);setShowIns(true);}} onFocus={()=>setShowIns(true)}/>
+        {showIns&&buscaIns.length>0&&<div className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">{insFilt.length>0?insFilt.map(i=><button key={i.id} onClick={()=>addBomItem(i)} className="w-full text-left px-4 py-3 hover:bg-indigo-50 flex justify-between"><div><p className="font-bold text-sm">{i.nome}</p><p className="text-xs text-slate-400">{i.tipo} • R$ {Number(i.custo_unitario).toFixed(4)}/{i.unidade_medida}</p></div><Plus size={14} className="text-indigo-400"/></button>):<div className="p-4 text-sm text-slate-400">Não encontrado.</div>}</div>}
+      </div>
+      {bom.length>0?(
+        <div className="border border-slate-200 rounded-2xl overflow-hidden overflow-x-auto">
+          <table className="w-full text-sm min-w-[480px]">
+            <thead><tr className="bg-slate-50 border-b border-slate-100"><th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase">Insumo</th><th className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 uppercase w-24">Quantidade</th><th className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 uppercase w-24">Desperdício %</th><th className="px-3 py-2.5 text-right text-[10px] font-black text-slate-400 uppercase w-28">Custo</th><th className="w-8"></th></tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {bom.map(b=>{const ins=insumosList.find(i=>i.id===b.insumo_id)||b.insumos;const custo=(Number(ins?.custo_unitario||0)*Number(b.quantidade_insumo||0)*(1+Number(b.percentual_desperdicio||0)/100));return(
+                <tr key={b.id}>
+                  <td className="px-3 py-2 font-bold text-sm">{b.insumos?.nome||ins?.nome||'—'}<span className="text-xs text-slate-400 font-normal ml-1">/{b.insumos?.unidade_medida||ins?.unidade_medida}</span></td>
+                  <td className="px-3 py-2"><input type="number" min="0" step="0.001" value={b.quantidade_insumo} onChange={e=>updBom(b.id,'quantidade_insumo',Number(e.target.value))} className="w-full text-center text-sm font-bold bg-transparent border-b border-transparent focus:border-indigo-400 outline-none"/></td>
+                  <td className="px-3 py-2"><input type="number" min="0" max="100" step="0.5" value={b.percentual_desperdicio} onChange={e=>updBom(b.id,'percentual_desperdicio',Number(e.target.value))} className="w-full text-center text-sm font-bold bg-transparent border-b border-transparent focus:border-indigo-400 outline-none"/></td>
+                  <td className="px-3 py-2 text-right font-black text-indigo-600 text-sm">R$ {custo.toFixed(4)}</td>
+                  <td className="px-3 py-2"><button onClick={()=>delBom(b)} className="text-slate-300 hover:text-rose-500"><Trash2 size={13}/></button></td>
+                </tr>
+              );})}
+            </tbody>
+            <tfoot><tr className="bg-indigo-50 border-t-2 border-indigo-100"><td colSpan={3} className="px-3 py-3 text-right font-black text-slate-600 text-sm uppercase">Custo Total:</td><td className="px-3 py-3 text-right font-black text-indigo-700">R$ {custoTotal.toFixed(4)}</td><td></td></tr></tfoot>
+          </table>
+        </div>
+      ):<div className="border-2 border-dashed border-slate-200 rounded-2xl p-5 text-center text-slate-400 text-sm">Busque insumos acima para montar a composição</div>}
+    </div>
+    <BotaoSalvar onClick={salvar} loading={salvando} label="Salvar Produto e Composição"/>
+  </ModalWrapper><AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
+}
+
+/* ── MODAL EDITAR FORNECEDOR ──────────────────────────────── */
+function ModalEditarFornecedor({fornecedor,onClose}:{fornecedor:any;onClose:()=>void}) {
+  const[form,setForm]=useState({nome:fornecedor.nome||'',cnpj:fornecedor.cnpj||'',contato:fornecedor.contato||'',telefone:fornecedor.telefone||'',whatsapp:fornecedor.whatsapp||'',email:fornecedor.email||'',cidade:fornecedor.cidade||'',observacoes:fornecedor.observacoes||''});
+  const[salvando,setSalvando]=useState(false);const[toast,setToast]=useState('');
+  const salvar=async()=>{setSalvando(true);await supabase.from('fornecedores').update(form).eq('id',fornecedor.id);setSalvando(false);setToast('Fornecedor atualizado! ✅');setTimeout(onClose,1400);};
+  return(<><ModalWrapper title={`Editar — ${fornecedor.nome}`} onClose={onClose}>
+    <Campo label="Nome *"><input type="text" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} className={inputClass}/></Campo>
+    <div className="grid grid-cols-2 gap-4"><Campo label="CNPJ"><input type="text" value={form.cnpj} onChange={e=>setForm({...form,cnpj:e.target.value})} className={inputClass}/></Campo><Campo label="Contato"><input type="text" value={form.contato} onChange={e=>setForm({...form,contato:e.target.value})} className={inputClass}/></Campo></div>
+    <div className="grid grid-cols-2 gap-4"><Campo label="WhatsApp"><input type="text" value={form.whatsapp} onChange={e=>setForm({...form,whatsapp:e.target.value})} className={inputClass}/></Campo><Campo label="E-mail"><input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} className={inputClass}/></Campo></div>
+    <Campo label="Cidade"><input type="text" value={form.cidade} onChange={e=>setForm({...form,cidade:e.target.value})} className={inputClass}/></Campo>
+    <BotaoSalvar onClick={salvar} loading={salvando} label="Salvar Alterações"/>
+  </ModalWrapper><AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
 }
 
 /* ── AUXILIARES ────────────────────────────────────────────── */
