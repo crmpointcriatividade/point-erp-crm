@@ -118,8 +118,21 @@ export default function App() {
   const[contasKey,setContasKey]=useState(0);
   const[caixaKey,setCaixaKey]=useState(0);
 
-  const login=(u:AppUser)=>{sessionStorage.setItem('point_user',JSON.stringify(u));setUser(u);};
-  const logout=()=>{sessionStorage.removeItem('point_user');setUser(null);};
+  const login=(u:AppUser)=>{
+    sessionStorage.setItem('point_user',JSON.stringify(u));
+    // Força re-render sem reload de página
+    setUser({...u});
+    setActiveTab('kanban');
+  };
+  const logout=()=>{
+    sessionStorage.removeItem('point_user');
+    setActiveTab('kanban');
+    setModal(null);
+    setSidebarOpen(false);
+    setSearchQuery('');
+    // Limpa estado antes de setar null para garantir transição limpa
+    setUser(null);
+  };
 
   if(!user) return <TelaLogin onLogin={login}/>;
 
@@ -249,7 +262,7 @@ export default function App() {
                 {activeTab==='produtos'     && <ProdutosView     key={globalKey} searchQuery={searchQuery} onAdd={()=>setModal('novoProduto')} onEditar={abrirEditarProduto}/>}
                 {activeTab==='clientes'     && <ClientesView     key={globalKey} searchQuery={searchQuery} onAdd={()=>setModal('cliente')} onVerPerfil={abrirPerfilCliente}/>}
                 {activeTab==='fornecedores' && <FornecedoresView key={globalKey} searchQuery={searchQuery} onAdd={()=>setModal('fornecedor')} onEditar={abrirEditarFornecedor}/>}
-                {activeTab==='vendas'       && <VendasView key={globalKey}/>}
+                {activeTab==='vendas'       && <VendasView key={globalKey} onAbrirDetalhe={abrirDetalheOrc}/>}
                 {activeTab==='contasreceber'&& <ContasReceberView key={contasKey} onEditar={abrirEditarCR}/>}
                 {activeTab==='compras'      && <ComprasView      key={comprasKey+globalKey} searchQuery={searchQuery} onAdd={()=>setModal('compra')} onAbrirDetalhe={abrirDetalheCompra}/>}
                 {activeTab==='contaspagar'  && <ContasPagarView  key={contasKey} onEditar={abrirEditarCP}/>}
@@ -413,6 +426,7 @@ function KanbanView({searchQuery,onNovoPedido,onAbrirDetalhe}:{searchQuery:strin
 function ModalDetalheOrcamento({pedido,onClose}:{pedido:Pedido;onClose:()=>void}) {
   const{statuses}=useKanbanStatus();
   const{refetch}=usePedidos();
+  const{clientes}=useClientes();
   const[statusId,setStatusId]=useState(pedido.status_id);
   const[itens,setItens]=useState<any[]>([]);
   const[produtos,setProdutos]=useState<Produto[]>([]);
@@ -422,6 +436,13 @@ function ModalDetalheOrcamento({pedido,onClose}:{pedido:Pedido;onClose:()=>void}
   const[salvando,setSalvando]=useState(false);
   const[toast,setToast]=useState('');
   const[toastColor,setToastColor]=useState<'emerald'|'indigo'|'rose'>('emerald');
+  // Edição de cliente e entrega
+  const[editandoCliente,setEditandoCliente]=useState(false);
+  const[buscaCli,setBuscaCli]=useState(pedido.clientes?.nome||pedido.cliente_nome_avulso||'');
+  const[cliSelecionado,setCli]=useState<any|null>(pedido.clientes||null);
+  const[showCli,setShowCli]=useState(false);
+  const cliRef=useRef<HTMLDivElement>(null);
+  const[dataEntrega,setDataEntrega]=useState(pedido.data_entrega||'');
 
   const statusAtual=statuses.find(s=>s.id===statusId);
 
@@ -433,11 +454,15 @@ function ModalDetalheOrcamento({pedido,onClose}:{pedido:Pedido;onClose:()=>void}
 
   // Fecha dropdown ao clicar fora
   useEffect(()=>{
-    const h=(e:MouseEvent)=>{if(prodRef.current&&!prodRef.current.contains(e.target as Node))setShowProd(false);};
+    const h=(e:MouseEvent)=>{
+      if(prodRef.current&&!prodRef.current.contains(e.target as Node))setShowProd(false);
+      if(cliRef.current&&!cliRef.current.contains(e.target as Node))setShowCli(false);
+    };
     document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);
   },[]);
 
   const prodsFiltrados=produtos.filter(p=>p.nome.toLowerCase().includes(buscaProd.toLowerCase())&&buscaProd.length>0).slice(0,6);
+  const clisFiltrados=clientes.filter(c=>c.nome.toLowerCase().includes(buscaCli.toLowerCase())&&buscaCli.length>0&&!cliSelecionado).slice(0,6);
 
   const addItem=(prod:Produto)=>{
     setItens(prev=>[...prev,{id:'new-'+crypto.randomUUID(),pedido_id:pedido.id,produto_id:prod.id,descricao_custom:prod.nome,quantidade:1,preco_unitario:0,custo_unitario:0,_novo:true}]);
@@ -453,8 +478,13 @@ function ModalDetalheOrcamento({pedido,onClose}:{pedido:Pedido;onClose:()=>void}
 
   const salvarAlteracoes=async()=>{
     setSalvando(true);
-    // Atualiza status
-    await supabase.from('pedidos').update({status_id:statusId,updated_at:new Date().toISOString()}).eq('id',pedido.id);
+    // Monta update com cliente e entrega
+    const updData:any={status_id:statusId,updated_at:new Date().toISOString(),data_entrega:dataEntrega||null};
+    if(cliSelecionado?.id){updData.cliente_id=cliSelecionado.id;updData.cliente_nome_avulso=null;}
+    else if(buscaCli.trim()){updData.cliente_nome_avulso=buscaCli.trim();updData.cliente_id=null;}
+    await supabase.from('pedidos').update(updData).eq('id',pedido.id);
+    // Atualiza valor_total
+    if(total>0)await supabase.from('pedidos').update({valor_total:total}).eq('id',pedido.id);
     // Itens novos
     const novos=itens.filter(i=>i._novo);
     if(novos.length>0)await supabase.from('itens_pedido').insert(novos.map(({id,_novo,_dirty,...rest})=>rest));
@@ -467,17 +497,42 @@ function ModalDetalheOrcamento({pedido,onClose}:{pedido:Pedido;onClose:()=>void}
   const transformarEmVenda=async()=>{
     if(!confirm('Transformar este orçamento em venda e enviar para Contas a Receber?'))return;
     setSalvando(true);
+
+    // Calcula custo de insumos via BOM no momento da venda (snapshot imutável)
+    let custoInsumoSnapshot=0;
+    const itensSalvar=itens.length>0?itens:[];
+    if(itensSalvar.length>0){
+      const prodIds=[...new Set(itensSalvar.map((i:any)=>i.produto_id).filter(Boolean))];
+      if(prodIds.length>0){
+        const{data:composicoes}=await supabase.from('composicao_produtos').select('produto_id,quantidade_insumo,percentual_desperdicio,insumos(custo_unitario)').in('produto_id',prodIds);
+        itensSalvar.forEach((item:any)=>{
+          if(!item.produto_id)return;
+          const comps=(composicoes||[]).filter((c:any)=>c.produto_id===item.produto_id);
+          comps.forEach((comp:any)=>{
+            custoInsumoSnapshot+=(Number(comp.insumos?.custo_unitario||0)*Number(comp.quantidade_insumo||0)*(1+Number(comp.percentual_desperdicio||0)/100)*Number(item.quantidade||1));
+          });
+        });
+      }
+    }
+
+    const nomeCliente=cliSelecionado?.nome||pedido.clientes?.nome||pedido.cliente_nome_avulso||'Cliente';
     await supabase.from('contas_receber').insert({
       pedido_id:pedido.id,
-      cliente_nome:pedido.clientes?.nome||pedido.cliente_nome_avulso||'Cliente',
+      cliente_nome:nomeCliente,
       descricao:`Venda referente ao Orçamento #${pedido.codigo}`,
       valor:total||pedido.valor_total,
-      data_vencimento:pedido.data_entrega||null,
+      data_vencimento:dataEntrega||pedido.data_entrega||null,
       status:'Aguardando',
     });
-    // Marca pedido como Finalizado
+    // Grava snapshot de custo no pedido para que Lucratividade não mude ao longo do tempo
     const finalizado=statuses.find(s=>s.nome==='Finalizado');
-    if(finalizado)await supabase.from('pedidos').update({status_id:finalizado.id,pagamento_confirmado:true,updated_at:new Date().toISOString()}).eq('id',pedido.id);
+    if(finalizado)await supabase.from('pedidos').update({
+      status_id:finalizado.id,
+      pagamento_confirmado:true,
+      updated_at:new Date().toISOString(),
+      // Salva custo snapshot para uso em lucratividade (não é afetado por mudanças futuras de preço)
+      custo_insumos_snapshot:custoInsumoSnapshot>0?custoInsumoSnapshot:null,
+    }).eq('id',pedido.id);
     refetch();setSalvando(false);showToast('Venda lançada em Contas a Receber! ✅','indigo');setTimeout(onClose,1800);
   };
 
@@ -488,13 +543,27 @@ function ModalDetalheOrcamento({pedido,onClose}:{pedido:Pedido;onClose:()=>void}
     <ModalWrapper title={`Orçamento #${pedido.codigo}`} onClose={onClose} size="lg">
       {/* Cabeçalho info */}
       <div className="bg-slate-50 rounded-2xl p-4 flex flex-wrap gap-4 justify-between items-start">
-        <div>
-          <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Cliente</p>
-          <p className="font-black text-slate-800">{pedido.clientes?.nome||pedido.cliente_nome_avulso||'—'}</p>
-          {(pedido.clientes?.whatsapp||pedido.cliente_contato_avulso)&&(
-          <a href={`https://wa.me/55${(pedido.clientes?.whatsapp||pedido.cliente_contato_avulso||'').replace(/\D/g,'')}`} target="_blank" rel="noreferrer"
+        <div className="flex-1 min-w-[180px]">
+          <div className="flex items-center gap-2 mb-1">
+            <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Cliente</p>
+            <button onClick={()=>setEditandoCliente(e=>!e)} className="text-[10px] font-bold text-indigo-500 hover:underline">{editandoCliente?'Fechar':'Alterar'}</button>
+          </div>
+          {!editandoCliente?(
+            <p className="font-black text-slate-800">{cliSelecionado?.nome||pedido.clientes?.nome||buscaCli||pedido.cliente_nome_avulso||'—'}</p>
+          ):(
+            <div className="relative" ref={cliRef}>
+              <input type="text" placeholder="Buscar cliente ou nome avulso..." className={inputClass+' text-sm py-1.5'} value={cliSelecionado?cliSelecionado.nome:buscaCli}
+                onChange={e=>{setBuscaCli(e.target.value);setCli(null);setShowCli(true);}} onFocus={()=>setShowCli(true)}/>
+              {cliSelecionado&&<button onClick={()=>{setCli(null);setBuscaCli('');}} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-500"><X size={13}/></button>}
+              {showCli&&clisFiltrados.length>0&&<div className="absolute z-30 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-40 overflow-y-auto">
+                {clisFiltrados.map(c=><button key={c.id} onClick={()=>{setCli(c);setBuscaCli('');setShowCli(false);}} className="w-full text-left px-3 py-2 hover:bg-indigo-50 text-sm font-bold">{c.nome}</button>)}
+              </div>}
+            </div>
+          )}
+          {(cliSelecionado?.whatsapp||pedido.clientes?.whatsapp||pedido.cliente_contato_avulso)&&!editandoCliente&&(
+          <a href={`https://wa.me/55${(cliSelecionado?.whatsapp||pedido.clientes?.whatsapp||pedido.cliente_contato_avulso||'').replace(/\D/g,'')}`} target="_blank" rel="noreferrer"
             className="flex items-center gap-1.5 text-xs text-emerald-600 font-bold mt-1 hover:underline">
-            <MessageSquare size={12}/>{pedido.clientes?.whatsapp||pedido.cliente_contato_avulso}
+            <MessageSquare size={12}/>{cliSelecionado?.whatsapp||pedido.clientes?.whatsapp||pedido.cliente_contato_avulso}
           </a>
         )}
         </div>
@@ -508,7 +577,8 @@ function ModalDetalheOrcamento({pedido,onClose}:{pedido:Pedido;onClose:()=>void}
         </div>
         <div>
           <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Entrega</p>
-          <p className="font-bold text-slate-700 text-sm">{pedido.data_entrega?new Date(pedido.data_entrega).toLocaleDateString('pt-BR'):'—'}</p>
+          <input type="date" value={dataEntrega} onChange={e=>setDataEntrega(e.target.value)}
+            className="text-sm font-bold text-slate-700 bg-white border border-slate-200 rounded-lg px-2 py-1 outline-none focus:border-indigo-400"/>
         </div>
         <div>
           <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Total</p>
@@ -590,18 +660,86 @@ function ModalDetalheOrcamento({pedido,onClose}:{pedido:Pedido;onClose:()=>void}
 /* ── INSUMOS ───────────────────────────────────────────────── */
 function InsumosView({searchQuery,onEditar}:{searchQuery:string;onEditar:(i:any)=>void}) {
   const{insumos,insumosAbaixoMinimo,loading,refetch}=useInsumos(searchQuery);
+  const[filtroAbaixoMin,setFiltroAbaixoMin]=useState(false);
+  const[exportando,setExportando]=useState(false);
+  const[importando,setImportando]=useState(false);
+  const fileInputRef=useRef<HTMLInputElement>(null);
+
   const excluir=async(id:string)=>{if(!confirm('Excluir este insumo? Esta ação não pode ser desfeita.'))return;await supabase.from('insumos').update({ativo:false}).eq('id',id);refetch();};
+
+  const insumosFiltrados=filtroAbaixoMin?insumosAbaixoMinimo:insumos;
+
+  // Exportar CSV
+  const exportarCSV=()=>{
+    setExportando(true);
+    const header='Nome,Tipo,Unidade,Custo Unitário,Estoque Atual,Estoque Mínimo,Gramatura';
+    const rows=insumos.map(i=>[
+      `"${i.nome}"`,i.tipo,i.unidade_medida,
+      Number(i.custo_unitario).toFixed(4),
+      Number(i.estoque_atual).toFixed(2),
+      Number(i.estoque_minimo).toFixed(2),
+      i.gramatura||''
+    ].join(','));
+    const csv=[header,...rows].join('\n');
+    const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download='insumos_estoque.csv';a.click();
+    URL.revokeObjectURL(url);setExportando(false);
+  };
+
+  // Importar CSV
+  const importarCSV=async(e:React.ChangeEvent<HTMLInputElement>)=>{
+    const file=e.target.files?.[0];if(!file)return;
+    setImportando(true);
+    const text=await file.text();
+    const lines=text.replace(/^\uFEFF/,'').split('\n').filter(l=>l.trim());
+    const [,,...dataLines]=lines; // pula header
+    let ok=0,erros=0;
+    for(const line of dataLines){
+      const cols=line.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
+      if(!cols[0])continue;
+      const{error}=await supabase.from('insumos').upsert({
+        nome:cols[0],tipo:cols[1]||'outro',unidade_medida:cols[2]||'unidade',
+        custo_unitario:Number(cols[3])||0,estoque_atual:Number(cols[4])||0,
+        estoque_minimo:Number(cols[5])||0,gramatura:cols[6]?Number(cols[6]):null,ativo:true
+      },{onConflict:'nome'});
+      if(error)erros++;else ok++;
+    }
+    setImportando(false);refetch();
+    alert(`Importação concluída! ✅\n${ok} insumos importados/atualizados.\n${erros>0?erros+' erros.':''}`);
+    if(fileInputRef.current)fileInputRef.current.value='';
+  };
+
   if(loading)return<LoadingSpinner label="Carregando insumos..."/>;
   return(
     <div className="space-y-5">
-      <div><h2 className="text-2xl md:text-3xl font-black">Insumos & Estoque</h2><p className="text-slate-500 text-sm">{insumos.length} insumos{insumosAbaixoMinimo.length>0&&<span className="text-rose-600 font-bold ml-2">• {insumosAbaixoMinimo.length} abaixo do mínimo!</span>}</p></div>
+      <div className="flex justify-between items-end flex-wrap gap-3">
+        <div><h2 className="text-2xl md:text-3xl font-black">Insumos & Estoque</h2><p className="text-slate-500 text-sm">{insumos.length} insumos{insumosAbaixoMinimo.length>0&&<span className="text-rose-600 font-bold ml-2">• {insumosAbaixoMinimo.length} abaixo do mínimo!</span>}</p></div>
+        <div className="flex gap-2 flex-wrap">
+          {/* Filtro abaixo do mínimo */}
+          <button onClick={()=>setFiltroAbaixoMin(f=>!f)} className={cn('flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold border transition-all',filtroAbaixoMin?'bg-rose-600 text-white border-rose-600':'bg-white text-rose-600 border-rose-200 hover:bg-rose-50')}><AlertTriangle size={14}/>Abaixo do Mínimo {filtroAbaixoMin&&`(${insumosAbaixoMinimo.length})`}</button>
+          {/* Exportar */}
+          <button onClick={exportarCSV} disabled={exportando} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Exportar CSV
+          </button>
+          {/* Importar */}
+          <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all cursor-pointer">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            {importando?'Importando...':'Importar CSV'}
+            <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={importarCSV}/>
+          </label>
+          <button onClick={refetch} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl"><RefreshCw size={17}/></button>
+        </div>
+      </div>
       {insumosAbaixoMinimo.length>0&&<div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-start gap-3"><AlertTriangle size={17} className="text-rose-500 mt-0.5 shrink-0"/><div><p className="font-bold text-rose-700 text-sm">Estoque Baixo</p><p className="text-rose-600 text-sm">{insumosAbaixoMinimo.map(i=>i.nome).join(', ')}</p></div></div>}
+      {filtroAbaixoMin&&<div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 text-amber-700 text-sm font-bold flex items-center gap-2"><AlertTriangle size={14}/>Exibindo apenas insumos abaixo do estoque mínimo ({insumosAbaixoMinimo.length}). <button onClick={()=>setFiltroAbaixoMin(false)} className="text-amber-500 hover:text-amber-700 ml-auto text-xs underline">Ver todos</button></div>}
       <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
         <table className="w-full text-left min-w-[750px]">
           <thead><tr className="bg-slate-50 border-b border-slate-100">{['Insumo','Tipo','Unidade','Custo Unit.','Estoque','Mínimo','Status','Ações'].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-slate-100">
-            {insumos.length===0&&<tr><td colSpan={8} className="px-5 py-10 text-center text-slate-400">Nenhum insumo.</td></tr>}
-            {insumos.map(i=>{const b=i.estoque_atual<=i.estoque_minimo;return(
+            {insumosFiltrados.length===0&&<tr><td colSpan={8} className="px-5 py-10 text-center text-slate-400">{filtroAbaixoMin?'Nenhum insumo abaixo do mínimo! 🎉':'Nenhum insumo.'}</td></tr>}
+            {insumosFiltrados.map(i=>{const b=i.estoque_atual<=i.estoque_minimo;return(
               <tr key={i.id} className="hover:bg-slate-50 transition-colors">
                 <td className="px-5 py-4 font-bold text-slate-800 text-sm">{i.nome}</td>
                 <td className="px-5 py-4"><span className="text-[10px] font-black uppercase bg-slate-100 text-slate-500 px-2 py-1 rounded-full">{i.tipo}</span></td>
@@ -624,15 +762,51 @@ function InsumosView({searchQuery,onEditar}:{searchQuery:string;onEditar:(i:any)
 function ProdutosView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=>void;onEditar:(p:any)=>void}) {
   const[produtos,setProdutos]=useState<Produto[]>([]);
   const[loading,setLoading]=useState(true);
+  const fileInputRef=useRef<HTMLInputElement>(null);
+  const[importando,setImportando]=useState(false);
   const load=useCallback(async()=>{setLoading(true);let q=supabase.from('produtos').select('*').eq('ativo',true).order('nome');if(searchQuery.trim())q=q.ilike('nome',`%${searchQuery}%`);const{data}=await q;setProdutos(data||[]);setLoading(false);},[searchQuery]);
   useEffect(()=>{load();},[load]);
   const excluir=async(id:string)=>{if(!confirm('Excluir este produto?'))return;await supabase.from('produtos').update({ativo:false}).eq('id',id);load();};
+
+  const exportarCSV=()=>{
+    const header='Nome,Descrição,Categoria,Markup,MO/hora';
+    const rows=produtos.map(p=>[`"${p.nome}"`,`"${p.descricao||''}"`,p.categoria,p.markup_sugerido,Number(p.custo_mao_obra_hora).toFixed(2)].join(','));
+    const csv=[header,...rows].join('\n');
+    const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+    const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='produtos.csv';a.click();URL.revokeObjectURL(url);
+  };
+
+  const importarCSV=async(e:React.ChangeEvent<HTMLInputElement>)=>{
+    const file=e.target.files?.[0];if(!file)return;setImportando(true);
+    const text=await file.text();
+    const lines=text.replace(/^\uFEFF/,'').split('\n').filter(l=>l.trim());
+    const[,...dataLines]=lines;let ok=0,erros=0;
+    for(const line of dataLines){
+      const cols=line.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
+      if(!cols[0])continue;
+      const{error}=await supabase.from('produtos').insert({nome:cols[0],descricao:cols[1]||null,categoria:cols[2]||'kit',markup_sugerido:Number(cols[3])||2.5,custo_mao_obra_hora:Number(cols[4])||25,ativo:true});
+      if(error)erros++;else ok++;
+    }
+    setImportando(false);load();alert(`Importação concluída! ✅\n${ok} produtos importados.\n${erros>0?erros+' erros.':''}`);
+    if(fileInputRef.current)fileInputRef.current.value='';
+  };
+
   if(loading)return<LoadingSpinner label="Carregando produtos..."/>;
   return(
     <div className="space-y-5">
       <div className="flex justify-between items-end flex-wrap gap-3">
         <div><h2 className="text-2xl md:text-3xl font-black">Produtos & Kits</h2><p className="text-slate-500 text-sm">{produtos.length} produtos — o que você <b>vende</b> ao cliente</p></div>
-        <button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Produto</button>
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={exportarCSV} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Exportar CSV
+          </button>
+          <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all cursor-pointer">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            {importando?'Importando...':'Importar CSV'}
+            <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={importarCSV}/>
+          </label>
+          <button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Produto</button>
+        </div>
       </div>
       <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-3 flex gap-2 text-sm text-indigo-700"><AlertTriangle size={15} className="text-indigo-400 shrink-0 mt-0.5"/><span><b>Dica:</b> Produtos = o que você vende. Insumos = o que você compra (matéria-prima).</span></div>
       {produtos.length===0?(
@@ -660,7 +834,7 @@ function ProdutosView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=
 }
 
 /* ── VENDAS (resumo de orçamentos finalizados) ─────────────── */
-function VendasView({key:_k}:{key?:number}={}) {
+function VendasView({key:_k,onAbrirDetalhe}:{key?:number;onAbrirDetalhe?:(p:any)=>void}={}) {
   const hoje=new Date();
   const[pedidos,setPedidos]=useState<any[]>([]);
   const[loading,setLoading]=useState(true);
@@ -686,10 +860,27 @@ function VendasView({key:_k}:{key?:number}={}) {
   const total=filtrados.reduce((a,p)=>a+Number(p.valor_total),0);
   const limparFiltros=()=>{setBusca('');setDe('');setAte('');setValorMin('');setValorMax('');};
   const temFiltro=busca||de||ate||valorMin||valorMax;
+
+  const exportarCSV=()=>{
+    const header='Código,Cliente,Valor Total,Data';
+    const rows=filtrados.map(p=>[`"#${p.codigo}"`,`"${p.clientes?.nome||p.cliente_nome_avulso||'—'}"`,Number(p.valor_total).toFixed(2),new Date(p.updated_at||p.created_at).toLocaleDateString('pt-BR')].join(','));
+    const csv=[header,...rows].join('\n');
+    const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download='vendas.csv';a.click();
+    URL.revokeObjectURL(url);
+  };
+
   if(loading)return<LoadingSpinner label="Carregando vendas..."/>;
   return(
     <div className="space-y-5">
-      <div><h2 className="text-2xl md:text-3xl font-black">Vendas</h2><p className="text-slate-500 text-sm">Orçamentos com status <b>Finalizado</b></p></div>
+      <div className="flex justify-between items-end flex-wrap gap-3">
+        <div><h2 className="text-2xl md:text-3xl font-black">Vendas</h2><p className="text-slate-500 text-sm">Orçamentos com status <b>Finalizado</b></p></div>
+        <button onClick={exportarCSV} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Exportar CSV
+        </button>
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Total de Vendas</p><p className="text-2xl font-black text-indigo-600">R$ {total.toFixed(2)}</p></div>
         <div className="bg-white border border-slate-200 rounded-2xl p-5"><p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-1">Nº de Pedidos</p><p className="text-2xl font-black text-slate-700">{filtrados.length}</p></div>
@@ -700,22 +891,10 @@ function VendasView({key:_k}:{key?:number}={}) {
         <div className="flex items-center justify-between"><p className="text-xs font-black text-slate-400 uppercase tracking-wider">Filtros</p>{temFiltro&&<button onClick={limparFiltros} className="text-xs font-bold text-rose-500 hover:bg-rose-50 px-2 py-1 rounded-lg">Limpar filtros</button>}</div>
         <div className="flex gap-3 flex-wrap">
           <div className="relative flex-1 min-w-[180px]"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input type="text" placeholder="Cliente ou código..." value={busca} onChange={e=>setBusca(e.target.value)} className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-400"/></div>
-          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 min-w-[130px]">
-            <span className="text-xs font-bold text-slate-400 uppercase shrink-0">De</span>
-            <input type="date" value={de} onChange={e=>setDe(e.target.value)} className="text-sm outline-none bg-transparent w-full"/>
-          </div>
-          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 min-w-[130px]">
-            <span className="text-xs font-bold text-slate-400 uppercase shrink-0">Até</span>
-            <input type="date" value={ate} onChange={e=>setAte(e.target.value)} className="text-sm outline-none bg-transparent w-full"/>
-          </div>
-          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 min-w-[110px]">
-            <span className="text-xs font-bold text-slate-400 uppercase shrink-0">R$≥</span>
-            <input type="number" placeholder="Min" value={valorMin} onChange={e=>setValorMin(e.target.value)} className="text-sm outline-none bg-transparent w-full"/>
-          </div>
-          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 min-w-[110px]">
-            <span className="text-xs font-bold text-slate-400 uppercase shrink-0">R$≤</span>
-            <input type="number" placeholder="Max" value={valorMax} onChange={e=>setValorMax(e.target.value)} className="text-sm outline-none bg-transparent w-full"/>
-          </div>
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 min-w-[130px]"><span className="text-xs font-bold text-slate-400 uppercase shrink-0">De</span><input type="date" value={de} onChange={e=>setDe(e.target.value)} className="text-sm outline-none bg-transparent w-full"/></div>
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 min-w-[130px]"><span className="text-xs font-bold text-slate-400 uppercase shrink-0">Até</span><input type="date" value={ate} onChange={e=>setAte(e.target.value)} className="text-sm outline-none bg-transparent w-full"/></div>
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 min-w-[110px]"><span className="text-xs font-bold text-slate-400 uppercase shrink-0">R$≥</span><input type="number" placeholder="Min" value={valorMin} onChange={e=>setValorMin(e.target.value)} className="text-sm outline-none bg-transparent w-full"/></div>
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 min-w-[110px]"><span className="text-xs font-bold text-slate-400 uppercase shrink-0">R$≤</span><input type="number" placeholder="Max" value={valorMax} onChange={e=>setValorMax(e.target.value)} className="text-sm outline-none bg-transparent w-full"/></div>
           <button onClick={load} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl" title="Atualizar"><RefreshCw size={16}/></button>
         </div>
         {temFiltro&&<p className="text-xs text-indigo-600 font-bold">{filtrados.length} resultado{filtrados.length!==1?'s':''} encontrado{filtrados.length!==1?'s':''}</p>}
@@ -731,7 +910,15 @@ function VendasView({key:_k}:{key?:number}={}) {
                   <td className="px-5 py-4 font-bold text-slate-800 text-sm">{p.clientes?.nome||p.cliente_nome_avulso||'—'}</td>
                   <td className="px-5 py-4 font-black text-emerald-600 text-sm">R$ {Number(p.valor_total).toFixed(2)}</td>
                   <td className="px-5 py-4 text-sm text-slate-500">{new Date(p.updated_at||p.created_at).toLocaleDateString('pt-BR')}</td>
-                  <td className="px-5 py-4"><div className="flex gap-2"><span className="flex items-center gap-1 text-emerald-600 text-xs font-bold"><CheckCircle2 size={12}/>Finalizado</span><span className="text-slate-200">|</span><button onClick={()=>excluir(p.id)} className="text-rose-400 font-bold text-sm hover:text-rose-600 hover:underline">Excluir</button></div></td>
+                  <td className="px-5 py-4">
+                    <div className="flex gap-2 items-center">
+                      {onAbrirDetalhe&&<button onClick={()=>onAbrirDetalhe(p)} className="text-indigo-600 font-bold text-sm hover:underline">Editar</button>}
+                      {onAbrirDetalhe&&<span className="text-slate-200">|</span>}
+                      <span className="flex items-center gap-1 text-emerald-600 text-xs font-bold"><CheckCircle2 size={12}/>Finalizado</span>
+                      <span className="text-slate-200">|</span>
+                      <button onClick={()=>excluir(p.id)} className="text-rose-400 font-bold text-sm hover:text-rose-600 hover:underline">Excluir</button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -746,15 +933,54 @@ function VendasView({key:_k}:{key?:number}={}) {
 function ClientesView({searchQuery,onAdd,onVerPerfil}:{searchQuery:string;onAdd:()=>void;onVerPerfil:(c:any)=>void}) {
   const{clientes,loading,refetch}=useClientes(searchQuery);
   const{user}=useAuth();
-  const[filtroStatus,setFiltroStatus]=useState('Todos');
-  const clientesFiltrados=clientes.filter(c=>filtroStatus==='Todos'||(!c.cidade&&filtroStatus==='Sem cidade'));
+  const fileInputRef=useRef<HTMLInputElement>(null);
+  const[importando,setImportando]=useState(false);
+
   const excluir=async(id:string)=>{if(!confirm('Excluir este cliente?'))return;await supabase.from('clientes').delete().eq('id',id);refetch();};
+
+  const exportarCSV=()=>{
+    const header='Nome,CPF/CNPJ,E-mail,WhatsApp,Cidade,Estado';
+    const rows=clientes.map(c=>[`"${c.nome}"`,c.cpf_cnpj||'',c.email||'',c.whatsapp||'',c.cidade||'',c.estado||''].join(','));
+    const csv=[header,...rows].join('\n');
+    const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+    const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='clientes.csv';a.click();URL.revokeObjectURL(url);
+  };
+
+  const importarCSV=async(e:React.ChangeEvent<HTMLInputElement>)=>{
+    const file=e.target.files?.[0];if(!file)return;
+    setImportando(true);
+    const text=await file.text();
+    const lines=text.replace(/^\uFEFF/,'').split('\n').filter(l=>l.trim());
+    const[,...dataLines]=lines;
+    let ok=0,erros=0;
+    for(const line of dataLines){
+      const cols=line.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
+      if(!cols[0])continue;
+      const{error}=await supabase.from('clientes').insert({nome:cols[0],cpf_cnpj:cols[1]||null,email:cols[2]||null,whatsapp:cols[3]||null,cidade:cols[4]||null,estado:cols[5]||null});
+      if(error)erros++;else ok++;
+    }
+    setImportando(false);refetch();
+    alert(`Importação concluída! ✅\n${ok} clientes importados.\n${erros>0?erros+' erros (duplicados?).':''}`);
+    if(fileInputRef.current)fileInputRef.current.value='';
+  };
+
   if(loading)return<LoadingSpinner label="Carregando clientes..."/>;
   return(
     <div className="space-y-5">
       <div className="flex justify-between items-end flex-wrap gap-3">
         <div><h2 className="text-2xl md:text-3xl font-black">Clientes</h2><p className="text-slate-500 text-sm">{clientes.length} clientes cadastrados</p></div>
-        {user?.role==='admin'&&<button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Cliente</button>}
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={exportarCSV} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Exportar CSV
+          </button>
+          {user?.role==='admin'&&<label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all cursor-pointer">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            {importando?'Importando...':'Importar CSV'}
+            <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={importarCSV}/>
+          </label>}
+          {user?.role==='admin'&&<button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Cliente</button>}
+        </div>
       </div>
       <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
         <table className="w-full text-left min-w-[600px]">
@@ -780,13 +1006,49 @@ function ClientesView({searchQuery,onAdd,onVerPerfil}:{searchQuery:string;onAdd:
 /* ── FORNECEDORES ──────────────────────────────────────────── */
 function FornecedoresView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=>void;onEditar:(f:any)=>void}) {
   const{fornecedores,loading,refetch}=useFornecedores(searchQuery);
+  const fileInputRef=useRef<HTMLInputElement>(null);
+  const[importando,setImportando]=useState(false);
   const excluir=async(id:string)=>{if(!confirm('Excluir este fornecedor?'))return;await supabase.from('fornecedores').delete().eq('id',id);refetch();};
+
+  const exportarCSV=()=>{
+    const header='Nome,CNPJ,Contato,WhatsApp,E-mail,Cidade';
+    const rows=fornecedores.map(f=>[`"${f.nome}"`,f.cnpj||'',f.contato||'',f.whatsapp||'',f.email||'',f.cidade||''].join(','));
+    const csv=[header,...rows].join('\n');
+    const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+    const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='fornecedores.csv';a.click();URL.revokeObjectURL(url);
+  };
+
+  const importarCSV=async(e:React.ChangeEvent<HTMLInputElement>)=>{
+    const file=e.target.files?.[0];if(!file)return;setImportando(true);
+    const text=await file.text();
+    const lines=text.replace(/^\uFEFF/,'').split('\n').filter(l=>l.trim());
+    const[,...dataLines]=lines;let ok=0,erros=0;
+    for(const line of dataLines){
+      const cols=line.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
+      if(!cols[0])continue;
+      const{error}=await supabase.from('fornecedores').insert({nome:cols[0],cnpj:cols[1]||null,contato:cols[2]||null,whatsapp:cols[3]||null,email:cols[4]||null,cidade:cols[5]||null});
+      if(error)erros++;else ok++;
+    }
+    setImportando(false);refetch();alert(`Importação concluída! ✅\n${ok} fornecedores importados.\n${erros>0?erros+' erros.':''}`);
+    if(fileInputRef.current)fileInputRef.current.value='';
+  };
+
   if(loading)return<LoadingSpinner label="Carregando fornecedores..."/>;
   return(
     <div className="space-y-5">
       <div className="flex justify-between items-end flex-wrap gap-3">
         <div><h2 className="text-2xl md:text-3xl font-black">Fornecedores</h2><p className="text-slate-500 text-sm">{fornecedores.length} fornecedores</p></div>
-        <button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Fornecedor</button>
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={exportarCSV} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Exportar CSV
+          </button>
+          <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all cursor-pointer">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            {importando?'Importando...':'Importar CSV'}
+            <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={importarCSV}/>
+          </label>
+          <button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Fornecedor</button>
+        </div>
       </div>
       <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
         <table className="w-full text-left min-w-[600px]">
@@ -1830,14 +2092,19 @@ function LucratividadeView() {
       }
     }
 
-    // 3. Montar lista de vendas com receita e custo
-    const vendasDetalhadas=vendas.map((p:any)=>({
-      ...p,
-      receita:Number(p.valor_total),
-      custo:custosPorPedido[p.id]||0,
-      lucro:(Number(p.valor_total))-(custosPorPedido[p.id]||0),
-      margem:Number(p.valor_total)>0?((Number(p.valor_total)-(custosPorPedido[p.id]||0))/Number(p.valor_total))*100:0,
-    }));
+    // 3. Montar lista de vendas com receita e custo (usa snapshot gravado no momento da venda se disponível)
+    const vendasDetalhadas=vendas.map((p:any)=>{
+      // Preferência ao snapshot gravado no momento da venda (imutável)
+      const custoFinal=p.custo_insumos_snapshot!=null?Number(p.custo_insumos_snapshot):(custosPorPedido[p.id]||0);
+      return{
+        ...p,
+        receita:Number(p.valor_total),
+        custo:custoFinal,
+        usandoSnapshot:p.custo_insumos_snapshot!=null,
+        lucro:(Number(p.valor_total))-custoFinal,
+        margem:Number(p.valor_total)>0?((Number(p.valor_total)-custoFinal)/Number(p.valor_total))*100:0,
+      };
+    });
 
     // 4. Totais
     const receitaVendas=vendasDetalhadas.reduce((a:number,p:any)=>a+p.receita,0);
@@ -1874,6 +2141,14 @@ function LucratividadeView() {
             <span className="text-xs font-bold text-slate-400 uppercase">Até</span>
             <input type="date" value={ate} onChange={e=>setAte(e.target.value)} className="text-sm outline-none bg-transparent"/>
           </div>
+          {dados&&dados.vendasDetalhadas.length>0&&<button onClick={()=>{
+            const header='Código,Cliente,Data,Receita,Custo Insumos,Lucro,Margem%';
+            const rows=dados.vendasDetalhadas.map((p:any)=>[`#${p.codigo}`,`"${p.clientes?.nome||p.cliente_nome_avulso||'—'}"`,new Date(p.updated_at||p.created_at).toLocaleDateString('pt-BR'),p.receita.toFixed(2),p.custo.toFixed(2),p.lucro.toFixed(2),p.margem.toFixed(1)].join(','));
+            const csv=[header,...rows].join('\n');const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+            const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='lucratividade.csv';a.click();URL.revokeObjectURL(url);
+          }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Exportar CSV
+          </button>}
           <button onClick={calcular} className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all">
             <RefreshCw size={14}/>Calcular
           </button>
@@ -1991,7 +2266,12 @@ function LucratividadeView() {
                       <td className="px-4 py-3 text-sm text-slate-500">{new Date(p.updated_at||p.created_at).toLocaleDateString('pt-BR')}</td>
                       <td className="px-4 py-3 font-black text-emerald-600 text-sm">R$ {p.receita.toFixed(2)}</td>
                       <td className="px-4 py-3 font-black text-rose-500 text-sm">
-                        {p.custo>0?`R$ ${p.custo.toFixed(2)}`:<span className="text-slate-300 text-xs font-normal">Sem BOM</span>}
+                        {p.custo>0?(
+                          <span title={p.usandoSnapshot?'Valor fixo gravado no momento da venda (não muda com atualizações de preço)':'Calculado via BOM atual'}>
+                            R$ {p.custo.toFixed(2)}
+                            {p.usandoSnapshot&&<span className="ml-1 text-[9px] font-black bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded-full align-middle">🔒 fixo</span>}
+                          </span>
+                        ):<span className="text-slate-300 text-xs font-normal">Sem BOM</span>}
                       </td>
                       <td className={cn('px-4 py-3 font-black text-sm',p.lucro>=0?'text-emerald-700':'text-rose-600')}>
                         {p.lucro>=0?'+':''}R$ {p.lucro.toFixed(2)}
