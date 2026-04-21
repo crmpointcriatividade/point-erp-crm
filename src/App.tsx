@@ -906,7 +906,7 @@ function ProdutosView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=
                   <td className="px-5 py-4"><span className="text-[10px] font-black uppercase bg-indigo-50 text-indigo-600 px-2 py-1 rounded-full">{p.categoria}</span></td>
                   <td className="px-5 py-4 font-bold text-slate-700 text-sm">{p.markup_sugerido}×</td>
                   <td className="px-5 py-4 font-bold text-slate-700 text-sm">R$ {Number(p.custo_mao_obra_hora).toFixed(2)}/h</td>
-                  <td className="px-5 py-4"><div className="flex gap-2"><button onClick={()=>onEditar(p)} className="text-indigo-600 font-bold text-sm hover:underline">Editar / BOM</button><span className="text-slate-200">|</span><button onClick={()=>excluir(p.id)} className="text-rose-400 font-bold text-sm hover:text-rose-600 hover:underline">Excluir</button></div></td>
+                  <td className="px-5 py-4"><div className="flex gap-2"><button onClick={()=>onEditar(p)} className="text-indigo-600 font-bold text-sm hover:underline">Editar</button><span className="text-slate-200">|</span><button onClick={()=>excluir(p.id)} className="text-rose-400 font-bold text-sm hover:text-rose-600 hover:underline">Excluir</button></div></td>
                 </tr>
               ))}
             </tbody>
