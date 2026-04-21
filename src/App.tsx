@@ -7,7 +7,7 @@ import {
   ChevronDown, DollarSign, TrendingUp, TrendingDown, Download, Upload, Filter,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import * as XLSX from 'xlsx';
+import * as xls from 'xls';
 import { cn } from './lib/utils';
 import { generateBudgetPDF } from './lib/pdfGenerator';
 import { useKanbanStatus, usePedidos, useClientes, useFornecedores, useInsumos } from './hooks/useSupabase';
@@ -761,10 +761,10 @@ function InsumosView({searchQuery,onEditar}:{searchQuery:string;onEditar:(i:any)
       ['Nome','Tipo','Unidade','Custo Unitário','Estoque Atual','Estoque Mínimo','Gramatura'],
       ...insumos.map(i=>[i.nome,i.tipo,i.unidade_medida,Number(i.custo_unitario),Number(i.estoque_atual),Number(i.estoque_minimo),i.gramatura||''])
     ];
-    const ws=XLSX.utils.aoa_to_sheet(wsData);
+    const ws=xls.utils.aoa_to_sheet(wsData);
     ws['!cols']=[{wch:30},{wch:12},{wch:12},{wch:14},{wch:14},{wch:14},{wch:12}];
-    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Insumos');
-    XLSX.writeFile(wb,'insumos_estoque.xlsx');
+    const wb=xls.utils.book_new();xls.utils.book_append_sheet(wb,ws,'Insumos');
+    xls.writeFile(wb,'insumos_estoque.xls');
     setExportando(false);
   };
 
@@ -773,9 +773,9 @@ function InsumosView({searchQuery,onEditar}:{searchQuery:string;onEditar:(i:any)
     const file=e.target.files?.[0];if(!file)return;
     setImportando(true);
     const buf=await file.arrayBuffer();
-    const wb=XLSX.read(buf,{type:'buffer'});
+    const wb=xls.read(buf,{type:'buffer'});
     const ws=wb.Sheets[wb.SheetNames[0]];
-    const rows:any[][]=XLSX.utils.sheet_to_json(ws,{header:1});
+    const rows:any[][]=xls.utils.sheet_to_json(ws,{header:1});
     const dataRows=rows.slice(1).filter((r:any[])=>r[0]);
     let ok=0,erros=0;
     for(const cols of dataRows){
@@ -807,7 +807,7 @@ function InsumosView({searchQuery,onEditar}:{searchQuery:string;onEditar:(i:any)
           <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-all cursor-pointer">
             <Upload size={14}/>
             {importando?'Importando...':'Importar XLS'}
-            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={importarXLS}/>
+            <input ref={fileInputRef} type="file" accept=".xls,.xls" className="hidden" onChange={importarXLS}/>
           </label>
           <button onClick={refetch} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl"><RefreshCw size={17}/></button>
         </div>
@@ -853,18 +853,18 @@ function ProdutosView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=
       ['Nome','Descrição','Categoria','Markup','MO/hora'],
       ...produtos.map(p=>[p.nome,p.descricao||'',p.categoria,Number(p.markup_sugerido),Number(p.custo_mao_obra_hora)])
     ];
-    const ws=XLSX.utils.aoa_to_sheet(wsData);
+    const ws=xls.utils.aoa_to_sheet(wsData);
     ws['!cols']=[{wch:30},{wch:30},{wch:14},{wch:10},{wch:12}];
-    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Produtos');
-    XLSX.writeFile(wb,'produtos.xlsx');
+    const wb=xls.utils.book_new();xls.utils.book_append_sheet(wb,ws,'Produtos');
+    xls.writeFile(wb,'produtos.xls');
   };
 
   const importarXLS=async(e:React.ChangeEvent<HTMLInputElement>)=>{
     const file=e.target.files?.[0];if(!file)return;setImportando(true);
     const buf=await file.arrayBuffer();
-    const wb=XLSX.read(buf,{type:'buffer'});
+    const wb=xls.read(buf,{type:'buffer'});
     const ws=wb.Sheets[wb.SheetNames[0]];
-    const rows:any[][]=XLSX.utils.sheet_to_json(ws,{header:1});
+    const rows:any[][]=xls.utils.sheet_to_json(ws,{header:1});
     const dataRows=rows.slice(1).filter((r:any[])=>r[0]);
     let ok=0,erros=0;
     for(const cols of dataRows){
@@ -887,7 +887,7 @@ function ProdutosView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=
           <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-all cursor-pointer">
             <Upload size={14}/>
             {importando?'Importando...':'Importar XLS'}
-            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={importarXLS}/>
+            <input ref={fileInputRef} type="file" accept=".xls,.xls" className="hidden" onChange={importarXLS}/>
           </label>
           <button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Produto</button>
         </div>
@@ -950,10 +950,10 @@ function VendasView({key:_k,onAbrirDetalhe}:{key?:number;onAbrirDetalhe?:(p:any)
       ['Código','Cliente','Valor Total','Data'],
       ...filtrados.map(p=>[`#${p.codigo}`,p.clientes?.nome||p.cliente_nome_avulso||'—',Number(p.valor_total),new Date(p.updated_at||p.created_at).toLocaleDateString('pt-BR')])
     ];
-    const ws=XLSX.utils.aoa_to_sheet(wsData);
+    const ws=xls.utils.aoa_to_sheet(wsData);
     ws['!cols']=[{wch:10},{wch:30},{wch:14},{wch:12}];
-    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Vendas');
-    XLSX.writeFile(wb,'vendas.xlsx');
+    const wb=xls.utils.book_new();xls.utils.book_append_sheet(wb,ws,'Vendas');
+    xls.writeFile(wb,'vendas.xls');
   };
 
   if(loading)return<LoadingSpinner label="Carregando vendas..."/>;
@@ -1027,19 +1027,19 @@ function ClientesView({searchQuery,onAdd,onVerPerfil}:{searchQuery:string;onAdd:
       ['Nome','CPF/CNPJ','E-mail','WhatsApp','Cidade','Estado'],
       ...clientes.map(c=>[c.nome,c.cpf_cnpj||'',c.email||'',c.whatsapp||'',c.cidade||'',c.estado||''])
     ];
-    const ws=XLSX.utils.aoa_to_sheet(wsData);
+    const ws=xls.utils.aoa_to_sheet(wsData);
     ws['!cols']=[{wch:30},{wch:18},{wch:28},{wch:16},{wch:16},{wch:8}];
-    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Clientes');
-    XLSX.writeFile(wb,'clientes.xlsx');
+    const wb=xls.utils.book_new();xls.utils.book_append_sheet(wb,ws,'Clientes');
+    xls.writeFile(wb,'clientes.xls');
   };
 
   const importarXLS=async(e:React.ChangeEvent<HTMLInputElement>)=>{
     const file=e.target.files?.[0];if(!file)return;
     setImportando(true);
     const buf=await file.arrayBuffer();
-    const wb=XLSX.read(buf,{type:'buffer'});
+    const wb=xls.read(buf,{type:'buffer'});
     const ws=wb.Sheets[wb.SheetNames[0]];
-    const rows:any[][]=XLSX.utils.sheet_to_json(ws,{header:1});
+    const rows:any[][]=xls.utils.sheet_to_json(ws,{header:1});
     const dataRows=rows.slice(1).filter((r:any[])=>r[0]);
     let ok=0,erros=0;
     for(const cols of dataRows){
@@ -1063,7 +1063,7 @@ function ClientesView({searchQuery,onAdd,onVerPerfil}:{searchQuery:string;onAdd:
           {user?.role==='admin'&&<label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-all cursor-pointer">
             <Upload size={14}/>
             {importando?'Importando...':'Importar XLS'}
-            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={importarXLS}/>
+            <input ref={fileInputRef} type="file" accept=".xls,.xls" className="hidden" onChange={importarXLS}/>
           </label>}
           {user?.role==='admin'&&<button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Cliente</button>}
         </div>
@@ -1101,18 +1101,18 @@ function FornecedoresView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd
       ['Nome','CNPJ','Contato','WhatsApp','E-mail','Cidade'],
       ...fornecedores.map(f=>[f.nome,f.cnpj||'',f.contato||'',f.whatsapp||'',f.email||'',f.cidade||''])
     ];
-    const ws=XLSX.utils.aoa_to_sheet(wsData);
+    const ws=xls.utils.aoa_to_sheet(wsData);
     ws['!cols']=[{wch:30},{wch:18},{wch:20},{wch:16},{wch:28},{wch:16}];
-    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Fornecedores');
-    XLSX.writeFile(wb,'fornecedores.xlsx');
+    const wb=xls.utils.book_new();xls.utils.book_append_sheet(wb,ws,'Fornecedores');
+    xls.writeFile(wb,'fornecedores.xls');
   };
 
   const importarXLS=async(e:React.ChangeEvent<HTMLInputElement>)=>{
     const file=e.target.files?.[0];if(!file)return;setImportando(true);
     const buf=await file.arrayBuffer();
-    const wb=XLSX.read(buf,{type:'buffer'});
+    const wb=xls.read(buf,{type:'buffer'});
     const ws=wb.Sheets[wb.SheetNames[0]];
-    const rows:any[][]=XLSX.utils.sheet_to_json(ws,{header:1});
+    const rows:any[][]=xls.utils.sheet_to_json(ws,{header:1});
     const dataRows=rows.slice(1).filter((r:any[])=>r[0]);
     let ok=0,erros=0;
     for(const cols of dataRows){
@@ -1135,7 +1135,7 @@ function FornecedoresView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd
           <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-all cursor-pointer">
             <Upload size={14}/>
             {importando?'Importando...':'Importar XLS'}
-            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={importarXLS}/>
+            <input ref={fileInputRef} type="file" accept=".xls,.xls" className="hidden" onChange={importarXLS}/>
           </label>
           <button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Fornecedor</button>
         </div>
@@ -2298,10 +2298,10 @@ function LucratividadeView() {
               ['Código','Cliente','Data','Receita','Custo Insumos','Lucro','Margem%'],
               ...dados.vendasDetalhadas.map((p:any)=>[`#${p.codigo}`,p.clientes?.nome||p.cliente_nome_avulso||'—',new Date(p.updated_at||p.created_at).toLocaleDateString('pt-BR'),p.receita,p.custo,p.lucro,p.margem.toFixed(1)])
             ];
-            const ws=XLSX.utils.aoa_to_sheet(wsData);
+            const ws=xls.utils.aoa_to_sheet(wsData);
             ws['!cols']=[{wch:10},{wch:28},{wch:12},{wch:12},{wch:14},{wch:12},{wch:10}];
-            const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Lucratividade');
-            XLSX.writeFile(wb,'lucratividade.xlsx');
+            const wb=xls.utils.book_new();xls.utils.book_append_sheet(wb,ws,'Lucratividade');
+            xls.writeFile(wb,'lucratividade.xls');
           }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-all">
             <Download size={14}/>Exportar XLS
           </button>}
