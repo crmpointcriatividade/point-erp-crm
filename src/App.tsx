@@ -4,9 +4,10 @@ import {
   Clock, CheckCircle2, AlertCircle, FileText, ShoppingCart, Truck,
   MessageSquare, Building2, X, ArrowRight, AlertTriangle, RefreshCw,
   Trash2, Menu, ChevronLeft, LogOut, Shield, UserCheck, Eye, EyeOff,
-  ChevronDown, DollarSign, TrendingUp, TrendingDown,
+  ChevronDown, DollarSign, TrendingUp, TrendingDown, Download, Upload, Filter,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import * as XLSX from 'xlsx';
 import { cn } from './lib/utils';
 import { generateBudgetPDF } from './lib/pdfGenerator';
 import { useKanbanStatus, usePedidos, useClientes, useFornecedores, useInsumos } from './hooks/useSupabase';
@@ -120,17 +121,25 @@ export default function App() {
 
   const login=(u:AppUser)=>{
     sessionStorage.setItem('point_user',JSON.stringify(u));
-    // Força re-render sem reload de página
-    setUser({...u});
+    // Limpa qualquer hash antigo e redefine aba inicial
+    window.history.replaceState(null,'',window.location.pathname);
     setActiveTab('kanban');
+    setGlobalKey(k=>k+1);
+    setUser({...u});
   };
   const logout=()=>{
     sessionStorage.removeItem('point_user');
+    // Limpa hash da URL ao sair
+    window.history.replaceState(null,'',window.location.pathname);
     setActiveTab('kanban');
     setModal(null);
     setSidebarOpen(false);
     setSearchQuery('');
-    // Limpa estado antes de setar null para garantir transição limpa
+    setGlobalKey(0);
+    setKanbanKey(0);
+    setContasKey(0);
+    setCaixaKey(0);
+    setComprasKey(0);
     setUser(null);
   };
 
@@ -352,6 +361,21 @@ function KanbanView({searchQuery,onNovoPedido,onAbrirDetalhe}:{searchQuery:strin
   const{statuses,loading:ls}=useKanbanStatus();
   const{pedidos,loading:lp,moverStatus,baixarEstoque,refetch}=usePedidos(searchQuery);
   const[movendo,setMovendo]=useState<string|null>(null);
+  const[filtroStatus,setFiltroStatus]=useState<string|null>(null);
+  const[filtroPeriodo,setFiltroPeriodo]=useState('');
+  const[mostrarFiltros,setMostrarFiltros]=useState(false);
+
+  const pedidosFiltrados=pedidos.filter(p=>{
+    if(filtroStatus){
+      const st=statuses.find(s=>s.nome===filtroStatus);
+      if(st&&p.status_id!==st.id)return false;
+    }
+    if(filtroPeriodo){
+      const criado=(p.created_at||'').slice(0,7);
+      if(criado!==filtroPeriodo)return false;
+    }
+    return true;
+  });
 
   const mover=async(pedido:Pedido,statusNome:string)=>{
     const ns=statuses.find(s=>s.nome===statusNome);if(!ns||pedido.status_id===ns.id)return;
@@ -368,29 +392,82 @@ function KanbanView({searchQuery,onNovoPedido,onAbrirDetalhe}:{searchQuery:strin
   };
   const zap=(p:Pedido)=>{const n=(p.clientes?.whatsapp||p.cliente_contato_avulso||'').replace(/\D/g,'');const m=encodeURIComponent(`Olá! Orçamento *#${p.codigo}*. Total: R$ ${Number(p.valor_total).toFixed(2)}. Confirma?`);if(n)window.open(`https://wa.me/55${n}?text=${m}`,'_blank');};
 
+  const temFiltroAtivo=filtroStatus||filtroPeriodo;
+  const limparFiltros=()=>{setFiltroStatus(null);setFiltroPeriodo('');};
+
   if(ls||lp)return<LoadingSpinner label="Carregando Kanban..."/>;
   return(
     <div>
-      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
-        <div><h2 className="text-2xl md:text-3xl font-black">CRM / Kanban</h2><p className="text-slate-500 text-sm">{pedidos.length} pedido{pedidos.length!==1?'s':''}</p></div>
-        <div className="flex gap-2">
-          <button onClick={refetch} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl"><RefreshCw size={17}/></button>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <div>
+          <h2 className="text-2xl md:text-3xl font-black">CRM / Kanban</h2>
+          <p className="text-slate-500 text-sm">{pedidosFiltrados.length} pedido{pedidosFiltrados.length!==1?'s':''}{temFiltroAtivo&&<span className="text-indigo-600 font-bold"> (filtrado{temFiltroAtivo?'s':''})</span>}</p>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={()=>setMostrarFiltros(f=>!f)} className={cn('flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-bold border transition-all',mostrarFiltros||temFiltroAtivo?'bg-indigo-600 text-white border-indigo-600':'bg-white text-slate-600 border-slate-200 hover:bg-slate-50')}>
+            <Filter size={14}/>{temFiltroAtivo?'Filtros ativos':'Filtrar'}
+          </button>
+          <button onClick={refetch} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl border border-slate-200 bg-white"><RefreshCw size={17}/></button>
           <button onClick={onNovoPedido} className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Orçamento</button>
         </div>
       </div>
-      <div className="flex gap-4 overflow-x-auto pb-4" style={{minHeight:'calc(100vh - 240px)'}}>
+
+      {/* Painel de filtros */}
+      <AnimatePresence>
+        {mostrarFiltros&&(
+          <motion.div initial={{opacity:0,height:0}} animate={{opacity:1,height:'auto'}} exit={{opacity:0,height:0}} className="overflow-hidden mb-4">
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><Filter size={12}/>Filtros do Kanban</p>
+                {temFiltroAtivo&&<button onClick={limparFiltros} className="text-xs font-bold text-rose-500 hover:bg-rose-50 px-2 py-1 rounded-lg">Limpar filtros</button>}
+              </div>
+              <div className="flex gap-3 flex-wrap">
+                {/* Filtro por coluna/status */}
+                <div className="flex-1 min-w-[200px]">
+                  <p className="text-xs font-bold text-slate-400 uppercase mb-1.5">Coluna / Status</p>
+                  <div className="flex gap-1.5 flex-wrap">
+                    <button onClick={()=>setFiltroStatus(null)} className={cn('px-3 py-1.5 rounded-xl text-xs font-bold transition-all',!filtroStatus?'bg-indigo-600 text-white':'bg-slate-100 text-slate-500 hover:bg-slate-200')}>Todas</button>
+                    {statuses.map(s=>{
+                      const cc=STATUS_PEDIDO_CORES[s.nome]||'bg-slate-100 border-slate-200 text-slate-600';
+                      const cnt=pedidos.filter(p=>p.status_id===s.id).length;
+                      return(
+                        <button key={s.id} onClick={()=>setFiltroStatus(filtroStatus===s.nome?null:s.nome)}
+                          className={cn('px-3 py-1.5 rounded-xl text-xs font-bold transition-all border',filtroStatus===s.nome?'bg-indigo-600 text-white border-indigo-600':cc)}>
+                          {s.nome} <span className="opacity-70">({cnt})</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                {/* Filtro por mês/ano */}
+                <div className="min-w-[180px]">
+                  <p className="text-xs font-bold text-slate-400 uppercase mb-1.5">Mês de Criação</p>
+                  <input type="month" value={filtroPeriodo} onChange={e=>setFiltroPeriodo(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-indigo-400"/>
+                </div>
+              </div>
+              {temFiltroAtivo&&<p className="text-xs text-indigo-600 font-bold">{pedidosFiltrados.length} pedido{pedidosFiltrados.length!==1?'s':''} exibido{pedidosFiltrados.length!==1?'s':''}</p>}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="flex gap-4 overflow-x-auto pb-4" style={{minHeight:'calc(100vh - 300px)'}}>
         {statuses.map(status=>{
-          const col=pedidos.filter(p=>p.status_id===status.id);
+          const col=pedidosFiltrados.filter(p=>p.status_id===status.id);
+          const colTotal=pedidos.filter(p=>p.status_id===status.id).length;
           const cc=STATUS_PEDIDO_CORES[status.nome]||'bg-slate-100 border-slate-200 text-slate-600';
           const next=statuses.find(s=>s.ordem===status.ordem+1);
           return(
             <div key={status.id} className="w-72 md:w-80 flex-shrink-0 flex flex-col">
               <div className={cn('flex items-center justify-between p-4 rounded-t-2xl border-b-2',cc)}>
                 <h3 className="font-black text-xs uppercase tracking-widest">{status.nome}</h3>
-                <span className="text-[10px] font-black bg-white/60 px-2 py-0.5 rounded-full">{col.length}</span>
+                <span className="text-[10px] font-black bg-white/60 px-2 py-0.5 rounded-full">
+                  {temFiltroAtivo&&col.length!==colTotal?`${col.length}/${colTotal}`:colTotal}
+                </span>
               </div>
               <div className="flex-1 bg-slate-100/40 p-3 space-y-3 rounded-b-2xl border border-slate-200 border-t-0 overflow-y-auto">
-                {col.length===0&&<p className="text-center text-slate-300 text-xs py-8">Vazio</p>}
+                {col.length===0&&<p className="text-center text-slate-300 text-xs py-8">{temFiltroAtivo?'Nenhum resultado':'Vazio'}</p>}
                 {col.map(p=>{
                   const nome=p.clientes?.nome||p.cliente_nome_avulso||'Cliente';
                   return(
@@ -442,7 +519,15 @@ function ModalDetalheOrcamento({pedido,onClose}:{pedido:Pedido;onClose:()=>void}
   const[cliSelecionado,setCli]=useState<any|null>(pedido.clientes||null);
   const[showCli,setShowCli]=useState(false);
   const cliRef=useRef<HTMLDivElement>(null);
-  const[dataEntrega,setDataEntrega]=useState(pedido.data_entrega||'');
+  // Normaliza data para YYYY-MM-DD (input[type=date] exige esse formato)
+  const normDate=(d:string|null|undefined)=>{
+    if(!d)return'';
+    // Se já está no formato YYYY-MM-DD, retorna direto
+    if(/^\d{4}-\d{2}-\d{2}$/.test(d))return d;
+    // Se é ISO com T, pega só os 10 primeiros caracteres
+    return d.slice(0,10);
+  };
+  const[dataEntrega,setDataEntrega]=useState(()=>normDate(pedido.data_entrega));
 
   const statusAtual=statuses.find(s=>s.id===statusId);
 
@@ -669,37 +754,33 @@ function InsumosView({searchQuery,onEditar}:{searchQuery:string;onEditar:(i:any)
 
   const insumosFiltrados=filtroAbaixoMin?insumosAbaixoMinimo:insumos;
 
-  // Exportar CSV
-  const exportarCSV=()=>{
+  // Exportar XLS
+  const exportarXLS=()=>{
     setExportando(true);
-    const header='Nome,Tipo,Unidade,Custo Unitário,Estoque Atual,Estoque Mínimo,Gramatura';
-    const rows=insumos.map(i=>[
-      `"${i.nome}"`,i.tipo,i.unidade_medida,
-      Number(i.custo_unitario).toFixed(4),
-      Number(i.estoque_atual).toFixed(2),
-      Number(i.estoque_minimo).toFixed(2),
-      i.gramatura||''
-    ].join(','));
-    const csv=[header,...rows].join('\n');
-    const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');a.href=url;a.download='insumos_estoque.csv';a.click();
-    URL.revokeObjectURL(url);setExportando(false);
+    const wsData=[
+      ['Nome','Tipo','Unidade','Custo Unitário','Estoque Atual','Estoque Mínimo','Gramatura'],
+      ...insumos.map(i=>[i.nome,i.tipo,i.unidade_medida,Number(i.custo_unitario),Number(i.estoque_atual),Number(i.estoque_minimo),i.gramatura||''])
+    ];
+    const ws=XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols']=[{wch:30},{wch:12},{wch:12},{wch:14},{wch:14},{wch:14},{wch:12}];
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Insumos');
+    XLSX.writeFile(wb,'insumos_estoque.xlsx');
+    setExportando(false);
   };
 
-  // Importar CSV
-  const importarCSV=async(e:React.ChangeEvent<HTMLInputElement>)=>{
+  // Importar XLS
+  const importarXLS=async(e:React.ChangeEvent<HTMLInputElement>)=>{
     const file=e.target.files?.[0];if(!file)return;
     setImportando(true);
-    const text=await file.text();
-    const lines=text.replace(/^\uFEFF/,'').split('\n').filter(l=>l.trim());
-    const [,,...dataLines]=lines; // pula header
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'buffer'});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows:any[][]=XLSX.utils.sheet_to_json(ws,{header:1});
+    const dataRows=rows.slice(1).filter((r:any[])=>r[0]);
     let ok=0,erros=0;
-    for(const line of dataLines){
-      const cols=line.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
-      if(!cols[0])continue;
+    for(const cols of dataRows){
       const{error}=await supabase.from('insumos').upsert({
-        nome:cols[0],tipo:cols[1]||'outro',unidade_medida:cols[2]||'unidade',
+        nome:String(cols[0]),tipo:String(cols[1]||'outro'),unidade_medida:String(cols[2]||'unidade'),
         custo_unitario:Number(cols[3])||0,estoque_atual:Number(cols[4])||0,
         estoque_minimo:Number(cols[5])||0,gramatura:cols[6]?Number(cols[6]):null,ativo:true
       },{onConflict:'nome'});
@@ -718,16 +799,15 @@ function InsumosView({searchQuery,onEditar}:{searchQuery:string;onEditar:(i:any)
         <div className="flex gap-2 flex-wrap">
           {/* Filtro abaixo do mínimo */}
           <button onClick={()=>setFiltroAbaixoMin(f=>!f)} className={cn('flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold border transition-all',filtroAbaixoMin?'bg-rose-600 text-white border-rose-600':'bg-white text-rose-600 border-rose-200 hover:bg-rose-50')}><AlertTriangle size={14}/>Abaixo do Mínimo {filtroAbaixoMin&&`(${insumosAbaixoMinimo.length})`}</button>
-          {/* Exportar */}
-          <button onClick={exportarCSV} disabled={exportando} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Exportar CSV
+          {/* Exportar XLS */}
+          <button onClick={exportarXLS} disabled={exportando} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-all">
+            <Download size={14}/>Exportar XLS
           </button>
-          {/* Importar */}
-          <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all cursor-pointer">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            {importando?'Importando...':'Importar CSV'}
-            <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={importarCSV}/>
+          {/* Importar XLS */}
+          <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-all cursor-pointer">
+            <Upload size={14}/>
+            {importando?'Importando...':'Importar XLS'}
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={importarXLS}/>
           </label>
           <button onClick={refetch} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl"><RefreshCw size={17}/></button>
         </div>
@@ -768,23 +848,27 @@ function ProdutosView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=
   useEffect(()=>{load();},[load]);
   const excluir=async(id:string)=>{if(!confirm('Excluir este produto?'))return;await supabase.from('produtos').update({ativo:false}).eq('id',id);load();};
 
-  const exportarCSV=()=>{
-    const header='Nome,Descrição,Categoria,Markup,MO/hora';
-    const rows=produtos.map(p=>[`"${p.nome}"`,`"${p.descricao||''}"`,p.categoria,p.markup_sugerido,Number(p.custo_mao_obra_hora).toFixed(2)].join(','));
-    const csv=[header,...rows].join('\n');
-    const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
-    const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='produtos.csv';a.click();URL.revokeObjectURL(url);
+  const exportarXLS=()=>{
+    const wsData=[
+      ['Nome','Descrição','Categoria','Markup','MO/hora'],
+      ...produtos.map(p=>[p.nome,p.descricao||'',p.categoria,Number(p.markup_sugerido),Number(p.custo_mao_obra_hora)])
+    ];
+    const ws=XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols']=[{wch:30},{wch:30},{wch:14},{wch:10},{wch:12}];
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Produtos');
+    XLSX.writeFile(wb,'produtos.xlsx');
   };
 
-  const importarCSV=async(e:React.ChangeEvent<HTMLInputElement>)=>{
+  const importarXLS=async(e:React.ChangeEvent<HTMLInputElement>)=>{
     const file=e.target.files?.[0];if(!file)return;setImportando(true);
-    const text=await file.text();
-    const lines=text.replace(/^\uFEFF/,'').split('\n').filter(l=>l.trim());
-    const[,...dataLines]=lines;let ok=0,erros=0;
-    for(const line of dataLines){
-      const cols=line.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
-      if(!cols[0])continue;
-      const{error}=await supabase.from('produtos').insert({nome:cols[0],descricao:cols[1]||null,categoria:cols[2]||'kit',markup_sugerido:Number(cols[3])||2.5,custo_mao_obra_hora:Number(cols[4])||25,ativo:true});
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'buffer'});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows:any[][]=XLSX.utils.sheet_to_json(ws,{header:1});
+    const dataRows=rows.slice(1).filter((r:any[])=>r[0]);
+    let ok=0,erros=0;
+    for(const cols of dataRows){
+      const{error}=await supabase.from('produtos').insert({nome:String(cols[0]),descricao:cols[1]||null,categoria:String(cols[2]||'kit'),markup_sugerido:Number(cols[3])||2.5,custo_mao_obra_hora:Number(cols[4])||25,ativo:true});
       if(error)erros++;else ok++;
     }
     setImportando(false);load();alert(`Importação concluída! ✅\n${ok} produtos importados.\n${erros>0?erros+' erros.':''}`);
@@ -797,13 +881,13 @@ function ProdutosView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=
       <div className="flex justify-between items-end flex-wrap gap-3">
         <div><h2 className="text-2xl md:text-3xl font-black">Produtos & Kits</h2><p className="text-slate-500 text-sm">{produtos.length} produtos — o que você <b>vende</b> ao cliente</p></div>
         <div className="flex gap-2 flex-wrap">
-          <button onClick={exportarCSV} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Exportar CSV
+          <button onClick={exportarXLS} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-all">
+            <Download size={14}/>Exportar XLS
           </button>
-          <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all cursor-pointer">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            {importando?'Importando...':'Importar CSV'}
-            <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={importarCSV}/>
+          <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-all cursor-pointer">
+            <Upload size={14}/>
+            {importando?'Importando...':'Importar XLS'}
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={importarXLS}/>
           </label>
           <button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Produto</button>
         </div>
@@ -861,14 +945,15 @@ function VendasView({key:_k,onAbrirDetalhe}:{key?:number;onAbrirDetalhe?:(p:any)
   const limparFiltros=()=>{setBusca('');setDe('');setAte('');setValorMin('');setValorMax('');};
   const temFiltro=busca||de||ate||valorMin||valorMax;
 
-  const exportarCSV=()=>{
-    const header='Código,Cliente,Valor Total,Data';
-    const rows=filtrados.map(p=>[`"#${p.codigo}"`,`"${p.clientes?.nome||p.cliente_nome_avulso||'—'}"`,Number(p.valor_total).toFixed(2),new Date(p.updated_at||p.created_at).toLocaleDateString('pt-BR')].join(','));
-    const csv=[header,...rows].join('\n');
-    const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');a.href=url;a.download='vendas.csv';a.click();
-    URL.revokeObjectURL(url);
+  const exportarXLS=()=>{
+    const wsData=[
+      ['Código','Cliente','Valor Total','Data'],
+      ...filtrados.map(p=>[`#${p.codigo}`,p.clientes?.nome||p.cliente_nome_avulso||'—',Number(p.valor_total),new Date(p.updated_at||p.created_at).toLocaleDateString('pt-BR')])
+    ];
+    const ws=XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols']=[{wch:10},{wch:30},{wch:14},{wch:12}];
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Vendas');
+    XLSX.writeFile(wb,'vendas.xlsx');
   };
 
   if(loading)return<LoadingSpinner label="Carregando vendas..."/>;
@@ -876,9 +961,8 @@ function VendasView({key:_k,onAbrirDetalhe}:{key?:number;onAbrirDetalhe?:(p:any)
     <div className="space-y-5">
       <div className="flex justify-between items-end flex-wrap gap-3">
         <div><h2 className="text-2xl md:text-3xl font-black">Vendas</h2><p className="text-slate-500 text-sm">Orçamentos com status <b>Finalizado</b></p></div>
-        <button onClick={exportarCSV} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Exportar CSV
+        <button onClick={exportarXLS} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-all">
+          <Download size={14}/>Exportar XLS
         </button>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -938,25 +1022,28 @@ function ClientesView({searchQuery,onAdd,onVerPerfil}:{searchQuery:string;onAdd:
 
   const excluir=async(id:string)=>{if(!confirm('Excluir este cliente?'))return;await supabase.from('clientes').delete().eq('id',id);refetch();};
 
-  const exportarCSV=()=>{
-    const header='Nome,CPF/CNPJ,E-mail,WhatsApp,Cidade,Estado';
-    const rows=clientes.map(c=>[`"${c.nome}"`,c.cpf_cnpj||'',c.email||'',c.whatsapp||'',c.cidade||'',c.estado||''].join(','));
-    const csv=[header,...rows].join('\n');
-    const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
-    const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='clientes.csv';a.click();URL.revokeObjectURL(url);
+  const exportarXLS=()=>{
+    const wsData=[
+      ['Nome','CPF/CNPJ','E-mail','WhatsApp','Cidade','Estado'],
+      ...clientes.map(c=>[c.nome,c.cpf_cnpj||'',c.email||'',c.whatsapp||'',c.cidade||'',c.estado||''])
+    ];
+    const ws=XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols']=[{wch:30},{wch:18},{wch:28},{wch:16},{wch:16},{wch:8}];
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Clientes');
+    XLSX.writeFile(wb,'clientes.xlsx');
   };
 
-  const importarCSV=async(e:React.ChangeEvent<HTMLInputElement>)=>{
+  const importarXLS=async(e:React.ChangeEvent<HTMLInputElement>)=>{
     const file=e.target.files?.[0];if(!file)return;
     setImportando(true);
-    const text=await file.text();
-    const lines=text.replace(/^\uFEFF/,'').split('\n').filter(l=>l.trim());
-    const[,...dataLines]=lines;
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'buffer'});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows:any[][]=XLSX.utils.sheet_to_json(ws,{header:1});
+    const dataRows=rows.slice(1).filter((r:any[])=>r[0]);
     let ok=0,erros=0;
-    for(const line of dataLines){
-      const cols=line.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
-      if(!cols[0])continue;
-      const{error}=await supabase.from('clientes').insert({nome:cols[0],cpf_cnpj:cols[1]||null,email:cols[2]||null,whatsapp:cols[3]||null,cidade:cols[4]||null,estado:cols[5]||null});
+    for(const cols of dataRows){
+      const{error}=await supabase.from('clientes').insert({nome:String(cols[0]),cpf_cnpj:cols[1]||null,email:cols[2]||null,whatsapp:cols[3]||null,cidade:cols[4]||null,estado:cols[5]||null});
       if(error)erros++;else ok++;
     }
     setImportando(false);refetch();
@@ -970,14 +1057,13 @@ function ClientesView({searchQuery,onAdd,onVerPerfil}:{searchQuery:string;onAdd:
       <div className="flex justify-between items-end flex-wrap gap-3">
         <div><h2 className="text-2xl md:text-3xl font-black">Clientes</h2><p className="text-slate-500 text-sm">{clientes.length} clientes cadastrados</p></div>
         <div className="flex gap-2 flex-wrap">
-          <button onClick={exportarCSV} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Exportar CSV
+          <button onClick={exportarXLS} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-all">
+            <Download size={14}/>Exportar XLS
           </button>
-          {user?.role==='admin'&&<label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all cursor-pointer">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            {importando?'Importando...':'Importar CSV'}
-            <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={importarCSV}/>
+          {user?.role==='admin'&&<label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-all cursor-pointer">
+            <Upload size={14}/>
+            {importando?'Importando...':'Importar XLS'}
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={importarXLS}/>
           </label>}
           {user?.role==='admin'&&<button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Cliente</button>}
         </div>
@@ -1010,23 +1096,27 @@ function FornecedoresView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd
   const[importando,setImportando]=useState(false);
   const excluir=async(id:string)=>{if(!confirm('Excluir este fornecedor?'))return;await supabase.from('fornecedores').delete().eq('id',id);refetch();};
 
-  const exportarCSV=()=>{
-    const header='Nome,CNPJ,Contato,WhatsApp,E-mail,Cidade';
-    const rows=fornecedores.map(f=>[`"${f.nome}"`,f.cnpj||'',f.contato||'',f.whatsapp||'',f.email||'',f.cidade||''].join(','));
-    const csv=[header,...rows].join('\n');
-    const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
-    const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='fornecedores.csv';a.click();URL.revokeObjectURL(url);
+  const exportarXLS=()=>{
+    const wsData=[
+      ['Nome','CNPJ','Contato','WhatsApp','E-mail','Cidade'],
+      ...fornecedores.map(f=>[f.nome,f.cnpj||'',f.contato||'',f.whatsapp||'',f.email||'',f.cidade||''])
+    ];
+    const ws=XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols']=[{wch:30},{wch:18},{wch:20},{wch:16},{wch:28},{wch:16}];
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Fornecedores');
+    XLSX.writeFile(wb,'fornecedores.xlsx');
   };
 
-  const importarCSV=async(e:React.ChangeEvent<HTMLInputElement>)=>{
+  const importarXLS=async(e:React.ChangeEvent<HTMLInputElement>)=>{
     const file=e.target.files?.[0];if(!file)return;setImportando(true);
-    const text=await file.text();
-    const lines=text.replace(/^\uFEFF/,'').split('\n').filter(l=>l.trim());
-    const[,...dataLines]=lines;let ok=0,erros=0;
-    for(const line of dataLines){
-      const cols=line.split(',').map(c=>c.replace(/^"|"$/g,'').trim());
-      if(!cols[0])continue;
-      const{error}=await supabase.from('fornecedores').insert({nome:cols[0],cnpj:cols[1]||null,contato:cols[2]||null,whatsapp:cols[3]||null,email:cols[4]||null,cidade:cols[5]||null});
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'buffer'});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows:any[][]=XLSX.utils.sheet_to_json(ws,{header:1});
+    const dataRows=rows.slice(1).filter((r:any[])=>r[0]);
+    let ok=0,erros=0;
+    for(const cols of dataRows){
+      const{error}=await supabase.from('fornecedores').insert({nome:String(cols[0]),cnpj:cols[1]||null,contato:cols[2]||null,whatsapp:cols[3]||null,email:cols[4]||null,cidade:cols[5]||null});
       if(error)erros++;else ok++;
     }
     setImportando(false);refetch();alert(`Importação concluída! ✅\n${ok} fornecedores importados.\n${erros>0?erros+' erros.':''}`);
@@ -1039,13 +1129,13 @@ function FornecedoresView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd
       <div className="flex justify-between items-end flex-wrap gap-3">
         <div><h2 className="text-2xl md:text-3xl font-black">Fornecedores</h2><p className="text-slate-500 text-sm">{fornecedores.length} fornecedores</p></div>
         <div className="flex gap-2 flex-wrap">
-          <button onClick={exportarCSV} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Exportar CSV
+          <button onClick={exportarXLS} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-all">
+            <Download size={14}/>Exportar XLS
           </button>
-          <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all cursor-pointer">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            {importando?'Importando...':'Importar CSV'}
-            <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={importarCSV}/>
+          <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-all cursor-pointer">
+            <Upload size={14}/>
+            {importando?'Importando...':'Importar XLS'}
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={importarXLS}/>
           </label>
           <button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Fornecedor</button>
         </div>
@@ -1150,21 +1240,47 @@ function ComprasView({searchQuery,onAdd,onAbrirDetalhe}:{searchQuery:string;onAd
 
 /* ── DETALHE COMPRA (status + itens + enviar p/ contas a pagar) ── */
 function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
+  const{fornecedores}=useFornecedores();
   const[status,setStatus]=useState(compra.status||'Pendente');
   const[itens,setItens]=useState<any[]>(compra.itens||[]);
   const[salvando,setSalvando]=useState(false);
   const[toast,setToast]=useState('');
   const[toastColor,setToastColor]=useState<'emerald'|'indigo'|'rose'>('emerald');
-  const total=itens.reduce((a,i)=>a+i.quantidade*i.valor_unitario,0);
+  // Campos editáveis de cabeçalho
+  const[fornNome,setFornNome]=useState(compra.fornecedor_nome||'');
+  const[data,setData]=useState(compra.data?compra.data.slice(0,10):'');
+  const[notaFiscal,setNotaFiscal]=useState(compra.nota_fiscal||'');
+  const[observacoes,setObservacoes]=useState(compra.observacoes||'');
+  const[buscaForn,setBuscaForn]=useState('');
+  const[showForn,setShowForn]=useState(false);
+  const fornRef=useRef<HTMLDivElement>(null);
+
+  useEffect(()=>{
+    const h=(e:MouseEvent)=>{if(fornRef.current&&!fornRef.current.contains(e.target as Node))setShowForn(false);};
+    document.addEventListener('mousedown',h);return()=>document.removeEventListener('mousedown',h);
+  },[]);
+
+  const fornFilt=fornecedores.filter(f=>f.nome.toLowerCase().includes(buscaForn.toLowerCase())&&buscaForn.length>0).slice(0,6);
+  const total=itens.reduce((a,i)=>a+Number(i.quantidade)*Number(i.valor_unitario),0);
 
   const addLinha=()=>setItens(p=>[...p,{id:crypto.randomUUID(),descricao:'',quantidade:1,valor_unitario:0}]);
   const upd=(id:string,k:string,v:any)=>setItens(p=>p.map(i=>i.id===id?{...i,[k]:v}:i));
   const del=(id:string)=>setItens(p=>p.filter(i=>i.id!==id));
 
   const salvar=async()=>{
+    if(!fornNome.trim()){alert('Informe o fornecedor.');return;}
     setSalvando(true);
-    await supabase.from('compras').update({status,itens,total,updated_at:new Date().toISOString()}).eq('id',compra.id);
-    setSalvando(false);setToast('Compra salva! Feche para atualizar a lista.');setToastColor('emerald');
+    await supabase.from('compras').update({
+      status,
+      itens,
+      total,
+      fornecedor_nome:fornNome,
+      data:data||null,
+      nota_fiscal:notaFiscal||null,
+      observacoes:observacoes||null,
+      updated_at:new Date().toISOString(),
+    }).eq('id',compra.id);
+    setSalvando(false);setToast('Compra salva!');setToastColor('emerald');
   };
 
   const enviarContasPagar=async()=>{
@@ -1172,10 +1288,10 @@ function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
     setSalvando(true);
     await supabase.from('contas_pagar').insert({
       compra_id:compra.id,
-      fornecedor_nome:compra.fornecedor_nome,
-      descricao:`Compra de ${compra.fornecedor_nome}${compra.nota_fiscal?' — NF '+compra.nota_fiscal:''}`,
+      fornecedor_nome:fornNome,
+      descricao:`Compra de ${fornNome}${notaFiscal?' — NF '+notaFiscal:''}`,
       valor:total||compra.total,
-      data_vencimento:compra.data||null,
+      data_vencimento:data||null,
       status:'Aguardando',
     });
     await supabase.from('compras').update({status:'Recebido'}).eq('id',compra.id);
@@ -1184,14 +1300,50 @@ function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
 
   return(
     <>
-    <ModalWrapper title={`Compra — ${compra.fornecedor_nome}`} onClose={onClose} size="lg">
-      <div className="bg-slate-50 rounded-2xl p-4 flex flex-wrap gap-4 justify-between items-start">
-        <div><p className="text-xs text-slate-400 font-bold uppercase mb-1">Fornecedor</p><p className="font-black text-slate-800">{compra.fornecedor_nome}</p></div>
-        <div><p className="text-xs text-slate-400 font-bold uppercase mb-1">Status</p><BadgeStatus status={status} options={STATUS_COMPRA} onChange={setStatus}/></div>
-        <div><p className="text-xs text-slate-400 font-bold uppercase mb-1">Data</p><p className="font-bold text-sm text-slate-700">{compra.data?new Date(compra.data).toLocaleDateString('pt-BR'):'—'}</p></div>
-        <div><p className="text-xs text-slate-400 font-bold uppercase mb-1">Total</p><p className="font-black text-indigo-600 text-lg">R$ {total.toFixed(2)}</p></div>
+    <ModalWrapper title={`Editar Compra — ${compra.fornecedor_nome}`} onClose={onClose} size="lg">
+      {/* Cabeçalho editável */}
+      <div className="bg-slate-50 rounded-2xl p-4 space-y-3">
+        <p className="text-xs font-black text-slate-400 uppercase tracking-wider">Dados da Compra</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Fornecedor */}
+          <div>
+            <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-1.5">Fornecedor *</label>
+            <div className="relative" ref={fornRef}>
+              <input type="text" placeholder="Nome do fornecedor..." value={buscaForn||fornNome}
+                onChange={e=>{setBuscaForn(e.target.value);setFornNome(e.target.value);setShowForn(true);}}
+                onFocus={()=>{setBuscaForn(fornNome);setShowForn(true);}}
+                onBlur={()=>setTimeout(()=>setShowForn(false),150)}
+                className={inputClass}/>
+              {showForn&&fornFilt.length>0&&(
+                <div className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-40 overflow-y-auto">
+                  {fornFilt.map(f=><button key={f.id} onClick={()=>{setFornNome(f.nome);setBuscaForn('');setShowForn(false);}} className="w-full text-left px-3 py-2 hover:bg-indigo-50 text-sm font-bold">{f.nome}<span className="text-xs text-slate-400 ml-2 font-normal">{f.cnpj||''}</span></button>)}
+                </div>
+              )}
+            </div>
+          </div>
+          {/* Status */}
+          <div>
+            <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-1.5">Status</label>
+            <BadgeStatus status={status} options={STATUS_COMPRA} onChange={setStatus}/>
+          </div>
+          {/* Data */}
+          <div>
+            <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-1.5">Data da Compra</label>
+            <input type="date" value={data} onChange={e=>setData(e.target.value)} className={inputClass}/>
+          </div>
+          {/* Nota Fiscal */}
+          <div>
+            <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-1.5">Nota Fiscal</label>
+            <input type="text" placeholder="NF-e 000123" value={notaFiscal} onChange={e=>setNotaFiscal(e.target.value)} className={inputClass}/>
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-1.5">Observações</label>
+          <input type="text" value={observacoes} onChange={e=>setObservacoes(e.target.value)} className={inputClass}/>
+        </div>
       </div>
 
+      {/* Itens */}
       <div className="space-y-3">
         <div className="flex justify-between items-center">
           <p className="text-xs font-black text-slate-500 uppercase">Itens Comprados</p>
@@ -1212,7 +1364,7 @@ function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
                   <td className="px-3 py-2"><input type="text" value={item.descricao||''} onChange={e=>upd(item.id||idx,'descricao',e.target.value)} className="w-full text-sm bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/></td>
                   <td className="px-3 py-2"><input type="number" min="1" value={item.quantidade} onChange={e=>upd(item.id||idx,'quantidade',Number(e.target.value))} className="w-full text-center text-sm font-bold bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/></td>
                   <td className="px-3 py-2"><input type="number" min="0" step="0.01" value={item.valor_unitario} onChange={e=>upd(item.id||idx,'valor_unitario',Number(e.target.value))} className="w-full text-center text-sm font-bold bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/></td>
-                  <td className="px-3 py-2 text-right font-black text-indigo-600 text-sm">R$ {(item.quantidade*item.valor_unitario).toFixed(2)}</td>
+                  <td className="px-3 py-2 text-right font-black text-indigo-600 text-sm">R$ {(Number(item.quantidade)*Number(item.valor_unitario)).toFixed(2)}</td>
                   <td className="px-3 py-2"><button onClick={()=>del(item.id||idx)} className="text-slate-300 hover:text-rose-500"><Trash2 size={13}/></button></td>
                 </tr>
               ))}
@@ -2142,12 +2294,16 @@ function LucratividadeView() {
             <input type="date" value={ate} onChange={e=>setAte(e.target.value)} className="text-sm outline-none bg-transparent"/>
           </div>
           {dados&&dados.vendasDetalhadas.length>0&&<button onClick={()=>{
-            const header='Código,Cliente,Data,Receita,Custo Insumos,Lucro,Margem%';
-            const rows=dados.vendasDetalhadas.map((p:any)=>[`#${p.codigo}`,`"${p.clientes?.nome||p.cliente_nome_avulso||'—'}"`,new Date(p.updated_at||p.created_at).toLocaleDateString('pt-BR'),p.receita.toFixed(2),p.custo.toFixed(2),p.lucro.toFixed(2),p.margem.toFixed(1)].join(','));
-            const csv=[header,...rows].join('\n');const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
-            const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='lucratividade.csv';a.click();URL.revokeObjectURL(url);
-          }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Exportar CSV
+            const wsData=[
+              ['Código','Cliente','Data','Receita','Custo Insumos','Lucro','Margem%'],
+              ...dados.vendasDetalhadas.map((p:any)=>[`#${p.codigo}`,p.clientes?.nome||p.cliente_nome_avulso||'—',new Date(p.updated_at||p.created_at).toLocaleDateString('pt-BR'),p.receita,p.custo,p.lucro,p.margem.toFixed(1)])
+            ];
+            const ws=XLSX.utils.aoa_to_sheet(wsData);
+            ws['!cols']=[{wch:10},{wch:28},{wch:12},{wch:12},{wch:14},{wch:12},{wch:10}];
+            const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Lucratividade');
+            XLSX.writeFile(wb,'lucratividade.xlsx');
+          }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-all">
+            <Download size={14}/>Exportar XLS
           </button>}
           <button onClick={calcular} className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all">
             <RefreshCw size={14}/>Calcular
