@@ -5,9 +5,10 @@ import {
   MessageSquare, Building2, X, ArrowRight, AlertTriangle, RefreshCw,
   Trash2, Menu, ChevronLeft, LogOut, Shield, UserCheck, Eye, EyeOff,
   ChevronDown, DollarSign, TrendingUp, TrendingDown, Download, Upload, Filter,
+  Landmark, CreditCard, Wallet, ArrowLeftRight, PiggyBank,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import * as xls from 'xls';
+import * as XLSX from 'xlsx';
 import { cn } from './lib/utils';
 import { generateBudgetPDF } from './lib/pdfGenerator';
 import { useKanbanStatus, usePedidos, useClientes, useFornecedores, useInsumos } from './hooks/useSupabase';
@@ -15,7 +16,7 @@ import { supabase } from './lib/supabase';
 import type { Pedido, Cliente, Produto, Compra } from './lib/supabase';
 
 /* ── TIPOS ─────────────────────────────────────────────────── */
-type ModalType = 'pedido'|'cliente'|'fornecedor'|'compra'|'novoProduto'|'novoClienteRapido'|'detalheOrc'|'detalheCompra'|'editarCliente'|'editarInsumo'|'editarProduto'|'perfilCliente'|'editarFornecedor'|'editarCR'|'editarCP'|'novoLancamentoCaixa'|'novaContaReceber'|'novaContaPagar'|'novoUsuario'|'editarUsuario'|null;
+type ModalType = 'pedido'|'cliente'|'fornecedor'|'compra'|'novoProduto'|'novoClienteRapido'|'detalheOrc'|'detalheCompra'|'editarCliente'|'novoInsumo'|'editarInsumo'|'editarProduto'|'perfilCliente'|'editarFornecedor'|'editarCR'|'editarCP'|'novoLancamentoCaixa'|'novaContaReceber'|'novaContaPagar'|'novoUsuario'|'editarUsuario'|'novaContaBancaria'|'editarContaBancaria'|'transferenciaContas'|null;
 type UserRole = 'admin'|'colaborador';
 interface AppUser { nome:string; role:UserRole; }
 
@@ -118,6 +119,8 @@ export default function App() {
   const[usuarioSelecionado,setUsuarioSelecionado]=useState<any|null>(null);
   const[contasKey,setContasKey]=useState(0);
   const[caixaKey,setCaixaKey]=useState(0);
+  const[bancarioKey,setBancarioKey]=useState(0);
+  const[contaBancariaSelecionada,setContaBancariaSelecionada]=useState<any|null>(null);
 
   const login=(u:AppUser)=>{
     sessionStorage.setItem('point_user',JSON.stringify(u));
@@ -139,6 +142,7 @@ export default function App() {
     setKanbanKey(0);
     setContasKey(0);
     setCaixaKey(0);
+    setBancarioKey(0);
     setComprasKey(0);
     setUser(null);
   };
@@ -156,12 +160,15 @@ export default function App() {
     {id:'contasreceber',label:'Contas a Receber',   icon:<DollarSign size={20}/>,      roles:['admin']},
     {id:'compras',      label:'Compras',            icon:<Truck size={20}/>,           roles:['admin','colaborador']},
     {id:'contaspagar',  label:'Contas a Pagar',     icon:<TrendingDown size={20}/>,    roles:['admin']},
+    {id:'bancario',      label:'Controle Bancário',  icon:<Landmark size={20}/>,        roles:['admin']},
     {id:'caixa',         label:'Controle de Caixa',  icon:<DollarSign size={20}/>,      roles:['admin']},
     {id:'lucratividade', label:'Lucratividade',       icon:<TrendingUp size={20}/>,       roles:['admin']},
     {id:'config',        label:'Configurações',       icon:<Settings size={20}/>,         roles:['admin']},
   ].filter(t=>t.roles.includes(user.role));
 
   const headerBtn=()=>{
+    if(activeTab==='bancario')            return{label:'Nova Conta Bancária', action:()=>setModal('novaContaBancaria')};
+    if(activeTab==='insumos')             return{label:'Novo Insumo',     action:()=>setModal('novoInsumo')};
     if(activeTab==='clientes'&&isAdmin) return{label:'Novo Cliente',    action:()=>setModal('cliente')};
     if(activeTab==='fornecedores')      return{label:'Novo Fornecedor', action:()=>setModal('fornecedor')};
     if(activeTab==='compras')           return{label:'Nova Compra',     action:()=>setModal('compra')};
@@ -178,7 +185,7 @@ export default function App() {
     setActiveTab(tab);setSidebarOpen(false);setSearchQuery('');
     // Incrementa globalKey para forçar remount de todos os componentes ao trocar de aba
     setGlobalKey(k=>k+1);
-    setContasKey(k=>k+1);setKanbanKey(k=>k+1);setCaixaKey(k=>k+1);setComprasKey(k=>k+1);
+    setContasKey(k=>k+1);setKanbanKey(k=>k+1);setCaixaKey(k=>k+1);setComprasKey(k=>k+1);setBancarioKey(k=>k+1);
     // Atualiza hash da URL para permitir navegação sem F5
     window.history.replaceState(null,'','#'+tab);
   };
@@ -190,7 +197,7 @@ export default function App() {
   },[]);
   // Reload data when tab becomes visible (fixes F5 issue - data is always fresh on tab switch)
   useEffect(()=>{
-    const handler=()=>{if(document.visibilityState==='visible'){setContasKey(k=>k+1);setKanbanKey(k=>k+1);setCaixaKey(k=>k+1);setComprasKey(k=>k+1);setGlobalKey(k=>k+1);}};
+    const handler=()=>{if(document.visibilityState==='visible'){setContasKey(k=>k+1);setKanbanKey(k=>k+1);setCaixaKey(k=>k+1);setComprasKey(k=>k+1);setBancarioKey(k=>k+1);setGlobalKey(k=>k+1);}};
     document.addEventListener('visibilitychange',handler);
     return()=>document.removeEventListener('visibilitychange',handler);
   },[]);
@@ -199,6 +206,7 @@ export default function App() {
   const abrirEditarCliente=(c:any)=>{setClienteSelecionadoEdit(c);setModal('editarCliente');};
   const abrirEditarCR=(c:any)=>{setCrSelecionado(c);setModal('editarCR');};
   const abrirEditarCP=(c:any)=>{setCpSelecionado(c);setModal('editarCP');};
+  const abrirEditarContaBancaria=(c:any)=>{setContaBancariaSelecionada(c);setModal('editarContaBancaria');};
   const abrirEditarUsuario=(u:any)=>{setUsuarioSelecionado(u);setModal('editarUsuario');};
   const abrirEditarFornecedor=(f:any)=>{setFornecedorSelecionadoEdit(f);setModal('editarFornecedor');};
   const abrirEditarInsumo=(i:any)=>{setInsumoSelecionadoEdit(i);setModal('editarInsumo');};
@@ -267,7 +275,7 @@ export default function App() {
             <AnimatePresence mode="wait">
               <motion.div key={activeTab} initial={{opacity:0,y:10}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-10}} transition={{duration:0.15}}>
                 {activeTab==='kanban'       && <KanbanView       key={kanbanKey+globalKey} searchQuery={searchQuery} onNovoPedido={()=>setModal('pedido')} onAbrirDetalhe={abrirDetalheOrc}/>}
-                {activeTab==='insumos'      && <InsumosView      key={globalKey} searchQuery={searchQuery} onEditar={abrirEditarInsumo}/>}
+                {activeTab==='insumos'      && <InsumosView      key={globalKey} searchQuery={searchQuery} onAdd={()=>setModal('novoInsumo')} onEditar={abrirEditarInsumo}/>}
                 {activeTab==='produtos'     && <ProdutosView     key={globalKey} searchQuery={searchQuery} onAdd={()=>setModal('novoProduto')} onEditar={abrirEditarProduto}/>}
                 {activeTab==='clientes'     && <ClientesView     key={globalKey} searchQuery={searchQuery} onAdd={()=>setModal('cliente')} onVerPerfil={abrirPerfilCliente}/>}
                 {activeTab==='fornecedores' && <FornecedoresView key={globalKey} searchQuery={searchQuery} onAdd={()=>setModal('fornecedor')} onEditar={abrirEditarFornecedor}/>}
@@ -275,6 +283,7 @@ export default function App() {
                 {activeTab==='contasreceber'&& <ContasReceberView key={contasKey} onEditar={abrirEditarCR}/>}
                 {activeTab==='compras'      && <ComprasView      key={comprasKey+globalKey} searchQuery={searchQuery} onAdd={()=>setModal('compra')} onAbrirDetalhe={abrirDetalheCompra}/>}
                 {activeTab==='contaspagar'  && <ContasPagarView  key={contasKey} onEditar={abrirEditarCP}/>}
+                {activeTab==='bancario'     && <BancarioView     key={bancarioKey} onNovaConta={()=>setModal('novaContaBancaria')} onEditar={abrirEditarContaBancaria} onTransferir={()=>setModal('transferenciaContas')}/>}
                 {activeTab==='caixa'        && <CaixaView       key={caixaKey} onNovo={()=>setModal('novoLancamentoCaixa')} onLancado={()=>setCaixaKey(k=>k+1)}/>}
                 {activeTab==='lucratividade'&& <LucratividadeView/>}
                 {activeTab==='config'       && <ConfigView      onNovoUsuario={()=>setModal('novoUsuario')} onEditarUsuario={abrirEditarUsuario}/>}
@@ -294,6 +303,7 @@ export default function App() {
           {modal==='detalheCompra'   && compraSelecionada     && <ModalDetalheCompra    compra={compraSelecionada}   onClose={closeDetalheCompra}/>}
           {modal==='editarCliente'   && clienteSelecionadoEdit && <ModalEditarCliente   cliente={clienteSelecionadoEdit} onClose={()=>{setModal(null);setClienteSelecionadoEdit(null);setKanbanKey(k=>k+1);}}/>}
           {modal==='perfilCliente'   && clienteSelecionadoEdit && <ModalPerfilCliente   cliente={clienteSelecionadoEdit} onClose={()=>{setModal(null);setClienteSelecionadoEdit(null);}} onEditar={(c)=>{setModal(null);setTimeout(()=>abrirEditarCliente(c),100);}}/>}
+          {modal==='novoInsumo'        &&                              <ModalNovoInsumo       onClose={()=>{setModal(null);setGlobalKey(k=>k+1);}}/>}
           {modal==='editarInsumo'    && insumoSelecionadoEdit  && <ModalEditarInsumo    insumo={insumoSelecionadoEdit}   onClose={()=>{setModal(null);setInsumoSelecionadoEdit(null);setKanbanKey(k=>k+1);}}/>}
           {modal==='editarProduto'   && produtoSelecionadoEdit   && <ModalEditarProduto   produto={produtoSelecionadoEdit}   onClose={()=>{setModal(null);setProdutoSelecionadoEdit(null);setKanbanKey(k=>k+1);}}/>}
           {modal==='editarFornecedor'  && fornecedorSelecionadoEdit && <ModalEditarFornecedor  fornecedor={fornecedorSelecionadoEdit} onClose={()=>{setModal(null);setFornecedorSelecionadoEdit(null);setKanbanKey(k=>k+1);}}/>}
@@ -302,6 +312,9 @@ export default function App() {
           {modal==='novaContaPagar'   &&                             <ModalNovaContaPagar                                       onClose={()=>{setModal(null);setContasKey(k=>k+1);}}/>}
           {modal==='editarCP'          && cpSelecionado             && <ModalEditarCP           conta={cpSelecionado}              onClose={()=>{setModal(null);setCpSelecionado(null);setContasKey(k=>k+1);}}/>}
           {modal==='novoLancamentoCaixa'&&                             <ModalNovoLancamentoCaixa                                   onClose={()=>{setModal(null);setCaixaKey(k=>k+1);}}/>}
+          {modal==='novaContaBancaria' &&                             <ModalNovaContaBancaria                                     onClose={()=>{setModal(null);setBancarioKey(k=>k+1);}}/>}
+          {modal==='editarContaBancaria' && contaBancariaSelecionada  && <ModalEditarContaBancaria conta={contaBancariaSelecionada} onClose={()=>{setModal(null);setContaBancariaSelecionada(null);setBancarioKey(k=>k+1);}}/>}
+          {modal==='transferenciaContas'&&                             <ModalTransferenciaContas                                   onClose={()=>{setModal(null);setBancarioKey(k=>k+1);}}/>}
           {modal==='novoUsuario'       &&                             <ModalNovoUsuario                                            onClose={()=>setModal(null)}/>}
           {modal==='editarUsuario'     && usuarioSelecionado         && <ModalEditarUsuario      usuario={usuarioSelecionado}       onClose={()=>{setModal(null);setUsuarioSelecionado(null);}}/>}
         </AnimatePresence>
@@ -743,7 +756,7 @@ function ModalDetalheOrcamento({pedido,onClose}:{pedido:Pedido;onClose:()=>void}
 }
 
 /* ── INSUMOS ───────────────────────────────────────────────── */
-function InsumosView({searchQuery,onEditar}:{searchQuery:string;onEditar:(i:any)=>void}) {
+function InsumosView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=>void;onEditar:(i:any)=>void}) {
   const{insumos,insumosAbaixoMinimo,loading,refetch}=useInsumos(searchQuery);
   const[filtroAbaixoMin,setFiltroAbaixoMin]=useState(false);
   const[exportando,setExportando]=useState(false);
@@ -761,10 +774,10 @@ function InsumosView({searchQuery,onEditar}:{searchQuery:string;onEditar:(i:any)
       ['Nome','Tipo','Unidade','Custo Unitário','Estoque Atual','Estoque Mínimo','Gramatura'],
       ...insumos.map(i=>[i.nome,i.tipo,i.unidade_medida,Number(i.custo_unitario),Number(i.estoque_atual),Number(i.estoque_minimo),i.gramatura||''])
     ];
-    const ws=xls.utils.aoa_to_sheet(wsData);
+    const ws=XLSX.utils.aoa_to_sheet(wsData);
     ws['!cols']=[{wch:30},{wch:12},{wch:12},{wch:14},{wch:14},{wch:14},{wch:12}];
-    const wb=xls.utils.book_new();xls.utils.book_append_sheet(wb,ws,'Insumos');
-    xls.writeFile(wb,'insumos_estoque.xls');
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Insumos');
+    XLSX.writeFile(wb,'insumos_estoque.xlsx');
     setExportando(false);
   };
 
@@ -773,9 +786,9 @@ function InsumosView({searchQuery,onEditar}:{searchQuery:string;onEditar:(i:any)
     const file=e.target.files?.[0];if(!file)return;
     setImportando(true);
     const buf=await file.arrayBuffer();
-    const wb=xls.read(buf,{type:'buffer'});
+    const wb=XLSX.read(buf,{type:'buffer'});
     const ws=wb.Sheets[wb.SheetNames[0]];
-    const rows:any[][]=xls.utils.sheet_to_json(ws,{header:1});
+    const rows:any[][]=XLSX.utils.sheet_to_json(ws,{header:1});
     const dataRows=rows.slice(1).filter((r:any[])=>r[0]);
     let ok=0,erros=0;
     for(const cols of dataRows){
@@ -797,7 +810,6 @@ function InsumosView({searchQuery,onEditar}:{searchQuery:string;onEditar:(i:any)
       <div className="flex justify-between items-end flex-wrap gap-3">
         <div><h2 className="text-2xl md:text-3xl font-black">Insumos & Estoque</h2><p className="text-slate-500 text-sm">{insumos.length} insumos{insumosAbaixoMinimo.length>0&&<span className="text-rose-600 font-bold ml-2">• {insumosAbaixoMinimo.length} abaixo do mínimo!</span>}</p></div>
         <div className="flex gap-2 flex-wrap">
-          {/* Filtro abaixo do mínimo */}
           <button onClick={()=>setFiltroAbaixoMin(f=>!f)} className={cn('flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold border transition-all',filtroAbaixoMin?'bg-rose-600 text-white border-rose-600':'bg-white text-rose-600 border-rose-200 hover:bg-rose-50')}><AlertTriangle size={14}/>Abaixo do Mínimo {filtroAbaixoMin&&`(${insumosAbaixoMinimo.length})`}</button>
           {/* Exportar XLS */}
           <button onClick={exportarXLS} disabled={exportando} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-all">
@@ -807,9 +819,10 @@ function InsumosView({searchQuery,onEditar}:{searchQuery:string;onEditar:(i:any)
           <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-all cursor-pointer">
             <Upload size={14}/>
             {importando?'Importando...':'Importar XLS'}
-            <input ref={fileInputRef} type="file" accept=".xls,.xls" className="hidden" onChange={importarXLS}/>
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={importarXLS}/>
           </label>
-          <button onClick={refetch} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl"><RefreshCw size={17}/></button>
+          <button onClick={refetch} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl border border-slate-200 bg-white"><RefreshCw size={17}/></button>
+          <button onClick={onAdd} className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-indigo-100 transition-all"><Plus size={15} strokeWidth={3}/>Novo Insumo</button>
         </div>
       </div>
       {insumosAbaixoMinimo.length>0&&<div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-start gap-3"><AlertTriangle size={17} className="text-rose-500 mt-0.5 shrink-0"/><div><p className="font-bold text-rose-700 text-sm">Estoque Baixo</p><p className="text-rose-600 text-sm">{insumosAbaixoMinimo.map(i=>i.nome).join(', ')}</p></div></div>}
@@ -853,18 +866,18 @@ function ProdutosView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=
       ['Nome','Descrição','Categoria','Markup','MO/hora'],
       ...produtos.map(p=>[p.nome,p.descricao||'',p.categoria,Number(p.markup_sugerido),Number(p.custo_mao_obra_hora)])
     ];
-    const ws=xls.utils.aoa_to_sheet(wsData);
+    const ws=XLSX.utils.aoa_to_sheet(wsData);
     ws['!cols']=[{wch:30},{wch:30},{wch:14},{wch:10},{wch:12}];
-    const wb=xls.utils.book_new();xls.utils.book_append_sheet(wb,ws,'Produtos');
-    xls.writeFile(wb,'produtos.xls');
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Produtos');
+    XLSX.writeFile(wb,'produtos.xlsx');
   };
 
   const importarXLS=async(e:React.ChangeEvent<HTMLInputElement>)=>{
     const file=e.target.files?.[0];if(!file)return;setImportando(true);
     const buf=await file.arrayBuffer();
-    const wb=xls.read(buf,{type:'buffer'});
+    const wb=XLSX.read(buf,{type:'buffer'});
     const ws=wb.Sheets[wb.SheetNames[0]];
-    const rows:any[][]=xls.utils.sheet_to_json(ws,{header:1});
+    const rows:any[][]=XLSX.utils.sheet_to_json(ws,{header:1});
     const dataRows=rows.slice(1).filter((r:any[])=>r[0]);
     let ok=0,erros=0;
     for(const cols of dataRows){
@@ -887,7 +900,7 @@ function ProdutosView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=
           <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-all cursor-pointer">
             <Upload size={14}/>
             {importando?'Importando...':'Importar XLS'}
-            <input ref={fileInputRef} type="file" accept=".xls,.xls" className="hidden" onChange={importarXLS}/>
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={importarXLS}/>
           </label>
           <button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Produto</button>
         </div>
@@ -906,7 +919,7 @@ function ProdutosView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=
                   <td className="px-5 py-4"><span className="text-[10px] font-black uppercase bg-indigo-50 text-indigo-600 px-2 py-1 rounded-full">{p.categoria}</span></td>
                   <td className="px-5 py-4 font-bold text-slate-700 text-sm">{p.markup_sugerido}×</td>
                   <td className="px-5 py-4 font-bold text-slate-700 text-sm">R$ {Number(p.custo_mao_obra_hora).toFixed(2)}/h</td>
-                  <td className="px-5 py-4"><div className="flex gap-2"><button onClick={()=>onEditar(p)} className="text-indigo-600 font-bold text-sm hover:underline">Editar</button><span className="text-slate-200">|</span><button onClick={()=>excluir(p.id)} className="text-rose-400 font-bold text-sm hover:text-rose-600 hover:underline">Excluir</button></div></td>
+                  <td className="px-5 py-4"><div className="flex gap-2"><button onClick={()=>onEditar(p)} className="text-indigo-600 font-bold text-sm hover:underline">Editar / BOM</button><span className="text-slate-200">|</span><button onClick={()=>excluir(p.id)} className="text-rose-400 font-bold text-sm hover:text-rose-600 hover:underline">Excluir</button></div></td>
                 </tr>
               ))}
             </tbody>
@@ -950,10 +963,10 @@ function VendasView({key:_k,onAbrirDetalhe}:{key?:number;onAbrirDetalhe?:(p:any)
       ['Código','Cliente','Valor Total','Data'],
       ...filtrados.map(p=>[`#${p.codigo}`,p.clientes?.nome||p.cliente_nome_avulso||'—',Number(p.valor_total),new Date(p.updated_at||p.created_at).toLocaleDateString('pt-BR')])
     ];
-    const ws=xls.utils.aoa_to_sheet(wsData);
+    const ws=XLSX.utils.aoa_to_sheet(wsData);
     ws['!cols']=[{wch:10},{wch:30},{wch:14},{wch:12}];
-    const wb=xls.utils.book_new();xls.utils.book_append_sheet(wb,ws,'Vendas');
-    xls.writeFile(wb,'vendas.xls');
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Vendas');
+    XLSX.writeFile(wb,'vendas.xlsx');
   };
 
   if(loading)return<LoadingSpinner label="Carregando vendas..."/>;
@@ -1027,19 +1040,19 @@ function ClientesView({searchQuery,onAdd,onVerPerfil}:{searchQuery:string;onAdd:
       ['Nome','CPF/CNPJ','E-mail','WhatsApp','Cidade','Estado'],
       ...clientes.map(c=>[c.nome,c.cpf_cnpj||'',c.email||'',c.whatsapp||'',c.cidade||'',c.estado||''])
     ];
-    const ws=xls.utils.aoa_to_sheet(wsData);
+    const ws=XLSX.utils.aoa_to_sheet(wsData);
     ws['!cols']=[{wch:30},{wch:18},{wch:28},{wch:16},{wch:16},{wch:8}];
-    const wb=xls.utils.book_new();xls.utils.book_append_sheet(wb,ws,'Clientes');
-    xls.writeFile(wb,'clientes.xls');
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Clientes');
+    XLSX.writeFile(wb,'clientes.xlsx');
   };
 
   const importarXLS=async(e:React.ChangeEvent<HTMLInputElement>)=>{
     const file=e.target.files?.[0];if(!file)return;
     setImportando(true);
     const buf=await file.arrayBuffer();
-    const wb=xls.read(buf,{type:'buffer'});
+    const wb=XLSX.read(buf,{type:'buffer'});
     const ws=wb.Sheets[wb.SheetNames[0]];
-    const rows:any[][]=xls.utils.sheet_to_json(ws,{header:1});
+    const rows:any[][]=XLSX.utils.sheet_to_json(ws,{header:1});
     const dataRows=rows.slice(1).filter((r:any[])=>r[0]);
     let ok=0,erros=0;
     for(const cols of dataRows){
@@ -1063,7 +1076,7 @@ function ClientesView({searchQuery,onAdd,onVerPerfil}:{searchQuery:string;onAdd:
           {user?.role==='admin'&&<label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-all cursor-pointer">
             <Upload size={14}/>
             {importando?'Importando...':'Importar XLS'}
-            <input ref={fileInputRef} type="file" accept=".xls,.xls" className="hidden" onChange={importarXLS}/>
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={importarXLS}/>
           </label>}
           {user?.role==='admin'&&<button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Cliente</button>}
         </div>
@@ -1101,18 +1114,18 @@ function FornecedoresView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd
       ['Nome','CNPJ','Contato','WhatsApp','E-mail','Cidade'],
       ...fornecedores.map(f=>[f.nome,f.cnpj||'',f.contato||'',f.whatsapp||'',f.email||'',f.cidade||''])
     ];
-    const ws=xls.utils.aoa_to_sheet(wsData);
+    const ws=XLSX.utils.aoa_to_sheet(wsData);
     ws['!cols']=[{wch:30},{wch:18},{wch:20},{wch:16},{wch:28},{wch:16}];
-    const wb=xls.utils.book_new();xls.utils.book_append_sheet(wb,ws,'Fornecedores');
-    xls.writeFile(wb,'fornecedores.xls');
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Fornecedores');
+    XLSX.writeFile(wb,'fornecedores.xlsx');
   };
 
   const importarXLS=async(e:React.ChangeEvent<HTMLInputElement>)=>{
     const file=e.target.files?.[0];if(!file)return;setImportando(true);
     const buf=await file.arrayBuffer();
-    const wb=xls.read(buf,{type:'buffer'});
+    const wb=XLSX.read(buf,{type:'buffer'});
     const ws=wb.Sheets[wb.SheetNames[0]];
-    const rows:any[][]=xls.utils.sheet_to_json(ws,{header:1});
+    const rows:any[][]=XLSX.utils.sheet_to_json(ws,{header:1});
     const dataRows=rows.slice(1).filter((r:any[])=>r[0]);
     let ok=0,erros=0;
     for(const cols of dataRows){
@@ -1135,7 +1148,7 @@ function FornecedoresView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd
           <label className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-all cursor-pointer">
             <Upload size={14}/>
             {importando?'Importando...':'Importar XLS'}
-            <input ref={fileInputRef} type="file" accept=".xls,.xls" className="hidden" onChange={importarXLS}/>
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={importarXLS}/>
           </label>
           <button onClick={onAdd} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg hover:bg-indigo-700 transition-all"><Plus size={15} strokeWidth={3}/>Novo Fornecedor</button>
         </div>
@@ -1431,7 +1444,7 @@ function ContasReceberView({onEditar}:{onEditar:(c:any)=>void}) {
   return(
     <div className="space-y-5">
       <div className="flex justify-between items-end flex-wrap gap-3">
-        <div><h2 className="text-2xl md:text-3xl font-black">Contas a Receber</h2><p className="text-slate-500 text-sm">Clique em Editar para alterar valor, vencimento ou status</p></div>
+        <div><h2 className="text-2xl md:text-3xl font-black">Contas a Receber</h2><p className="text-slate-500 text-sm">Clique em Editar para alterar valor, vencimento, conta ou status</p></div>
         <button onClick={load} className="flex items-center gap-2 p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all" title="Atualizar"><RefreshCw size={17}/></button>
       </div>
       {erroTabela&&<ErroTabela tabela="contas_receber"/>}
@@ -1441,7 +1454,6 @@ function ContasReceberView({onEditar}:{onEditar:(c:any)=>void}) {
         <div className="bg-white border border-slate-200 rounded-2xl p-4"><p className="text-xs font-black text-slate-400 uppercase mb-1">Atrasado</p><p className="text-xl font-black text-rose-600">R$ {atrasado.toFixed(2)}</p></div>
         <div className="bg-white border border-slate-200 rounded-2xl p-4"><p className="text-xs font-black text-slate-400 uppercase mb-1">Registros</p><p className="text-xl font-black text-slate-700">{filtradas.length}</p></div>
       </div>
-      {/* Filtros */}
       {!erroTabela&&(
         <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
           <div className="flex items-center justify-between"><p className="text-xs font-black text-slate-400 uppercase tracking-wider">Filtros</p>{temFiltro&&<button onClick={limparFiltros} className="text-xs font-bold text-rose-500 hover:bg-rose-50 px-2 py-1 rounded-lg">Limpar</button>}</div>
@@ -1466,8 +1478,8 @@ function ContasReceberView({onEditar}:{onEditar:(c:any)=>void}) {
       {!erroTabela&&filtradas.length===0&&<div className="bg-white rounded-3xl border border-slate-200 p-16 flex flex-col items-center gap-4 text-slate-300"><TrendingUp size={48}/><p className="font-black text-slate-400 text-lg uppercase tracking-widest">Nenhuma conta</p><p className="text-slate-400 text-sm">{temFiltro?'Tente ajustar os filtros.':'Transforme um orçamento em venda no CRM/Kanban.'}</p></div>}
       {filtradas.length>0&&(
         <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
-          <table className="w-full text-left min-w-[700px]">
-            <thead><tr className="bg-slate-50 border-b border-slate-100">{['Cliente','Descrição','Valor','Vencimento','Status','Ação'].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
+          <table className="w-full text-left min-w-[800px]">
+            <thead><tr className="bg-slate-50 border-b border-slate-100">{['Cliente','Descrição','Valor','Vencimento','Conta Bancária','Status','Ação'].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
               {filtradas.map(c=>{
                 const venc=c.data_vencimento?new Date(c.data_vencimento+'T12:00:00'):null;
@@ -1475,9 +1487,14 @@ function ContasReceberView({onEditar}:{onEditar:(c:any)=>void}) {
                 return(
                   <tr key={c.id} className={cn('hover:bg-slate-50 transition-colors',atras&&'bg-rose-50/30')}>
                     <td className="px-5 py-4 font-bold text-slate-800 text-sm">{c.cliente_nome}</td>
-                    <td className="px-5 py-4 text-sm text-slate-500 max-w-[180px] truncate">{c.descricao||'—'}</td>
+                    <td className="px-5 py-4 text-sm text-slate-500 max-w-[160px] truncate">{c.descricao||'—'}</td>
                     <td className="px-5 py-4 font-black text-emerald-600 text-sm">R$ {Number(c.valor).toFixed(2)}</td>
                     <td className={cn('px-5 py-4 text-sm font-bold',atras?'text-rose-600':'text-slate-500')}>{venc?venc.toLocaleDateString('pt-BR'):'—'}{atras&&' ⚠️'}</td>
+                    <td className="px-5 py-4">
+                      {c.conta_bancaria_nome
+                        ?<span className="flex items-center gap-1.5 text-xs font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full"><Landmark size={11}/>{c.conta_bancaria_nome}</span>
+                        :<span className="text-slate-300 text-xs">—</span>}
+                    </td>
                     <td className="px-5 py-4"><BadgeStatus status={c.status||'Aguardando'} options={STATUS_CR} onChange={async s=>{await supabase.from('contas_receber').update({status:s,data_recebimento:s==='Recebido'?new Date().toISOString():null}).eq('id',c.id);load();}}/></td>
                     <td className="px-5 py-4 flex gap-2">
                       <button onClick={()=>onEditar(c)} className="text-indigo-600 font-bold text-sm hover:underline">Editar</button>
@@ -1567,8 +1584,8 @@ function ContasPagarView({onEditar}:{onEditar:(c:any)=>void}) {
       {!erroTabela&&filtradas.length===0&&<div className="bg-white rounded-3xl border border-slate-200 p-16 flex flex-col items-center gap-4 text-slate-300"><TrendingDown size={48}/><p className="font-black text-slate-400 text-lg uppercase tracking-widest">Nenhuma conta</p><p className="text-slate-400 text-sm">{temFiltro?'Tente ajustar os filtros.':'Envie compras para Contas a Pagar nos detalhes de uma compra.'}</p></div>}
       {filtradas.length>0&&(
         <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
-          <table className="w-full text-left min-w-[700px]">
-            <thead><tr className="bg-slate-50 border-b border-slate-100">{['Fornecedor','Descrição','Valor','Vencimento','Status','Ação'].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
+          <table className="w-full text-left min-w-[800px]">
+            <thead><tr className="bg-slate-50 border-b border-slate-100">{['Fornecedor','Descrição','Valor','Vencimento','Conta Bancária','Status','Ação'].map(h=><th key={h} className="px-5 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">
               {filtradas.map(c=>{
                 const venc=c.data_vencimento?new Date(c.data_vencimento+'T12:00:00'):null;
@@ -1576,9 +1593,14 @@ function ContasPagarView({onEditar}:{onEditar:(c:any)=>void}) {
                 return(
                   <tr key={c.id} className={cn('hover:bg-slate-50 transition-colors',atras&&'bg-rose-50/30')}>
                     <td className="px-5 py-4 font-bold text-slate-800 text-sm">{c.fornecedor_nome}</td>
-                    <td className="px-5 py-4 text-sm text-slate-500 max-w-[180px] truncate">{c.descricao||'—'}</td>
+                    <td className="px-5 py-4 text-sm text-slate-500 max-w-[160px] truncate">{c.descricao||'—'}</td>
                     <td className="px-5 py-4 font-black text-rose-600 text-sm">R$ {Number(c.valor).toFixed(2)}</td>
                     <td className={cn('px-5 py-4 text-sm font-bold',atras?'text-rose-600':'text-slate-500')}>{venc?venc.toLocaleDateString('pt-BR'):'—'}{atras&&' ⚠️'}</td>
+                    <td className="px-5 py-4">
+                      {c.conta_bancaria_nome
+                        ?<span className="flex items-center gap-1.5 text-xs font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full"><Landmark size={11}/>{c.conta_bancaria_nome}</span>
+                        :<span className="text-slate-300 text-xs">—</span>}
+                    </td>
                     <td className="px-5 py-4"><BadgeStatus status={c.status||'Aguardando'} options={STATUS_CP} onChange={async s=>{await supabase.from('contas_pagar').update({status:s,data_pagamento:s==='Pago'?new Date().toISOString():null}).eq('id',c.id);load();}}/></td>
                     <td className="px-5 py-4 flex gap-2">
                       <button onClick={()=>onEditar(c)} className="text-indigo-600 font-bold text-sm hover:underline">Editar</button>
@@ -1802,16 +1824,23 @@ function ModalEditarCR({conta,onClose}:{conta:any;onClose:()=>void}) {
     valor:String(conta.valor||0),
     data_vencimento:conta.data_vencimento||'',
     status:conta.status||'Aguardando',
+    conta_bancaria_id:conta.conta_bancaria_id||'',
+    conta_bancaria_nome:conta.conta_bancaria_nome||'',
   });
+  const[contas,setContas]=useState<any[]>([]);
   const[salvando,setSalvando]=useState(false);const[toast,setToast]=useState('');
+  useEffect(()=>{supabase.from('contas_bancarias').select('id,nome,banco').eq('ativa',true).order('nome').then(({data})=>setContas(data||[]));},[]);
   const salvar=async()=>{
     setSalvando(true);
+    const cb=contas.find(c=>c.id===form.conta_bancaria_id);
     await supabase.from('contas_receber').update({
       cliente_nome:form.cliente_nome,
       descricao:form.descricao||null,
       valor:Number(form.valor),
       data_vencimento:form.data_vencimento||null,
       status:form.status,
+      conta_bancaria_id:form.conta_bancaria_id||null,
+      conta_bancaria_nome:cb?.nome||null,
       data_recebimento:form.status==='Recebido'?(conta.data_recebimento||new Date().toISOString()):null,
     }).eq('id',conta.id);
     setSalvando(false);setToast('Conta atualizada! ✅');setTimeout(onClose,1400);
@@ -1823,6 +1852,12 @@ function ModalEditarCR({conta,onClose}:{conta:any;onClose:()=>void}) {
       <Campo label="Valor (R$)"><input type="number" step="0.01" min="0" value={form.valor} onChange={e=>setForm({...form,valor:e.target.value})} className={inputClass}/></Campo>
       <Campo label="Data de Vencimento"><input type="date" value={form.data_vencimento} onChange={e=>setForm({...form,data_vencimento:e.target.value})} className={inputClass}/></Campo>
     </div>
+    <Campo label="Conta Bancária (onde será recebido)">
+      <select value={form.conta_bancaria_id} onChange={e=>setForm({...form,conta_bancaria_id:e.target.value})} className={inputClass}>
+        <option value="">— Sem conta vinculada —</option>
+        {contas.map(c=><option key={c.id} value={c.id}>{c.nome}{c.banco?` — ${c.banco}`:''}</option>)}
+      </select>
+    </Campo>
     <Campo label="Status">
       <select value={form.status} onChange={e=>setForm({...form,status:e.target.value})} className={inputClass}>
         {STATUS_CR.map(s=><option key={s} value={s}>{s}</option>)}
@@ -1841,16 +1876,23 @@ function ModalEditarCP({conta,onClose}:{conta:any;onClose:()=>void}) {
     valor:String(conta.valor||0),
     data_vencimento:conta.data_vencimento||'',
     status:conta.status||'Aguardando',
+    conta_bancaria_id:conta.conta_bancaria_id||'',
+    conta_bancaria_nome:conta.conta_bancaria_nome||'',
   });
+  const[contas,setContas]=useState<any[]>([]);
   const[salvando,setSalvando]=useState(false);const[toast,setToast]=useState('');
+  useEffect(()=>{supabase.from('contas_bancarias').select('id,nome,banco').eq('ativa',true).order('nome').then(({data})=>setContas(data||[]));},[]);
   const salvar=async()=>{
     setSalvando(true);
+    const cb=contas.find(c=>c.id===form.conta_bancaria_id);
     await supabase.from('contas_pagar').update({
       fornecedor_nome:form.fornecedor_nome,
       descricao:form.descricao||null,
       valor:Number(form.valor),
       data_vencimento:form.data_vencimento||null,
       status:form.status,
+      conta_bancaria_id:form.conta_bancaria_id||null,
+      conta_bancaria_nome:cb?.nome||null,
       data_pagamento:form.status==='Pago'?(conta.data_pagamento||new Date().toISOString()):null,
     }).eq('id',conta.id);
     setSalvando(false);setToast('Conta atualizada! ✅');setTimeout(onClose,1400);
@@ -1862,6 +1904,12 @@ function ModalEditarCP({conta,onClose}:{conta:any;onClose:()=>void}) {
       <Campo label="Valor (R$)"><input type="number" step="0.01" min="0" value={form.valor} onChange={e=>setForm({...form,valor:e.target.value})} className={inputClass}/></Campo>
       <Campo label="Data de Vencimento"><input type="date" value={form.data_vencimento} onChange={e=>setForm({...form,data_vencimento:e.target.value})} className={inputClass}/></Campo>
     </div>
+    <Campo label="Conta Bancária (de onde sairá o pagamento)">
+      <select value={form.conta_bancaria_id} onChange={e=>setForm({...form,conta_bancaria_id:e.target.value})} className={inputClass}>
+        <option value="">— Sem conta vinculada —</option>
+        {contas.map(c=><option key={c.id} value={c.id}>{c.nome}{c.banco?` — ${c.banco}`:''}</option>)}
+      </select>
+    </Campo>
     <Campo label="Status">
       <select value={form.status} onChange={e=>setForm({...form,status:e.target.value})} className={inputClass}>
         {STATUS_CP.map(s=><option key={s} value={s}>{s}</option>)}
@@ -2147,12 +2195,21 @@ function ModalEditarUsuario({usuario,onClose}:{usuario:any;onClose:()=>void}) {
 
 /* ── MODAL NOVA CONTA A RECEBER ───────────────────────────── */
 function ModalNovaContaReceber({onClose}:{onClose:()=>void}) {
-  const[form,setForm]=useState({cliente_nome:'',descricao:'',valor:'',data_vencimento:'',status:'Aguardando'});
+  const[form,setForm]=useState({cliente_nome:'',descricao:'',valor:'',data_vencimento:'',status:'Aguardando',conta_bancaria_id:''});
+  const[contas,setContas]=useState<any[]>([]);
   const[salvando,setSalvando]=useState(false);const[erro,setErro]=useState('');const[toast,setToast]=useState('');
+  useEffect(()=>{supabase.from('contas_bancarias').select('id,nome,banco').eq('ativa',true).order('nome').then(({data})=>setContas(data||[]));},[]);
   const salvar=async()=>{
     if(!form.cliente_nome.trim()||!form.valor||Number(form.valor)<=0){setErro('Cliente e valor são obrigatórios.');return;}
     setSalvando(true);
-    const{error}=await supabase.from('contas_receber').insert({cliente_nome:form.cliente_nome,descricao:form.descricao||null,valor:Number(form.valor),data_vencimento:form.data_vencimento||null,status:form.status});
+    const cb=contas.find(c=>c.id===form.conta_bancaria_id);
+    const{error}=await supabase.from('contas_receber').insert({
+      cliente_nome:form.cliente_nome,descricao:form.descricao||null,
+      valor:Number(form.valor),data_vencimento:form.data_vencimento||null,
+      status:form.status,
+      conta_bancaria_id:form.conta_bancaria_id||null,
+      conta_bancaria_nome:cb?.nome||null,
+    });
     if(error){setErro('Erro: '+error.message);setSalvando(false);}
     else{setToast('Conta criada! ✅');setTimeout(onClose,1400);}
   };
@@ -2164,6 +2221,12 @@ function ModalNovaContaReceber({onClose}:{onClose:()=>void}) {
       <Campo label="Valor (R$) *"><input type="number" step="0.01" min="0.01" value={form.valor} onChange={e=>setForm({...form,valor:e.target.value})} className={inputClass}/></Campo>
       <Campo label="Vencimento"><input type="date" value={form.data_vencimento} onChange={e=>setForm({...form,data_vencimento:e.target.value})} className={inputClass}/></Campo>
     </div>
+    <Campo label="Conta Bancária (onde será recebido)">
+      <select value={form.conta_bancaria_id} onChange={e=>setForm({...form,conta_bancaria_id:e.target.value})} className={inputClass}>
+        <option value="">— Sem conta vinculada —</option>
+        {contas.map(c=><option key={c.id} value={c.id}>{c.nome}{c.banco?` — ${c.banco}`:''}</option>)}
+      </select>
+    </Campo>
     <Campo label="Status"><select value={form.status} onChange={e=>setForm({...form,status:e.target.value})} className={inputClass}>{STATUS_CR.map(s=><option key={s} value={s}>{s}</option>)}</select></Campo>
     <BotaoSalvar onClick={salvar} loading={salvando} label="Criar Conta a Receber"/>
   </ModalWrapper>
@@ -2172,12 +2235,21 @@ function ModalNovaContaReceber({onClose}:{onClose:()=>void}) {
 
 /* ── MODAL NOVA CONTA A PAGAR ──────────────────────────────── */
 function ModalNovaContaPagar({onClose}:{onClose:()=>void}) {
-  const[form,setForm]=useState({fornecedor_nome:'',descricao:'',valor:'',data_vencimento:'',status:'Aguardando'});
+  const[form,setForm]=useState({fornecedor_nome:'',descricao:'',valor:'',data_vencimento:'',status:'Aguardando',conta_bancaria_id:''});
+  const[contas,setContas]=useState<any[]>([]);
   const[salvando,setSalvando]=useState(false);const[erro,setErro]=useState('');const[toast,setToast]=useState('');
+  useEffect(()=>{supabase.from('contas_bancarias').select('id,nome,banco').eq('ativa',true).order('nome').then(({data})=>setContas(data||[]));},[]);
   const salvar=async()=>{
     if(!form.fornecedor_nome.trim()||!form.valor||Number(form.valor)<=0){setErro('Fornecedor e valor são obrigatórios.');return;}
     setSalvando(true);
-    const{error}=await supabase.from('contas_pagar').insert({fornecedor_nome:form.fornecedor_nome,descricao:form.descricao||null,valor:Number(form.valor),data_vencimento:form.data_vencimento||null,status:form.status});
+    const cb=contas.find(c=>c.id===form.conta_bancaria_id);
+    const{error}=await supabase.from('contas_pagar').insert({
+      fornecedor_nome:form.fornecedor_nome,descricao:form.descricao||null,
+      valor:Number(form.valor),data_vencimento:form.data_vencimento||null,
+      status:form.status,
+      conta_bancaria_id:form.conta_bancaria_id||null,
+      conta_bancaria_nome:cb?.nome||null,
+    });
     if(error){setErro('Erro: '+error.message);setSalvando(false);}
     else{setToast('Conta criada! ✅');setTimeout(onClose,1400);}
   };
@@ -2189,10 +2261,351 @@ function ModalNovaContaPagar({onClose}:{onClose:()=>void}) {
       <Campo label="Valor (R$) *"><input type="number" step="0.01" min="0.01" value={form.valor} onChange={e=>setForm({...form,valor:e.target.value})} className={inputClass}/></Campo>
       <Campo label="Vencimento"><input type="date" value={form.data_vencimento} onChange={e=>setForm({...form,data_vencimento:e.target.value})} className={inputClass}/></Campo>
     </div>
+    <Campo label="Conta Bancária (de onde sairá o pagamento)">
+      <select value={form.conta_bancaria_id} onChange={e=>setForm({...form,conta_bancaria_id:e.target.value})} className={inputClass}>
+        <option value="">— Sem conta vinculada —</option>
+        {contas.map(c=><option key={c.id} value={c.id}>{c.nome}{c.banco?` — ${c.banco}`:''}</option>)}
+      </select>
+    </Campo>
     <Campo label="Status"><select value={form.status} onChange={e=>setForm({...form,status:e.target.value})} className={inputClass}>{STATUS_CP.map(s=><option key={s} value={s}>{s}</option>)}</select></Campo>
     <BotaoSalvar onClick={salvar} loading={salvando} label="Criar Conta a Pagar"/>
   </ModalWrapper>
   <AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
+}
+
+/* ── CONTROLE BANCÁRIO ─────────────────────────────────────── */
+// Hook interno para buscar contas bancárias
+function useContasBancarias() {
+  const[contas,setContas]=useState<any[]>([]);
+  const[loading,setLoading]=useState(true);
+  const[erro,setErro]=useState(false);
+  const load=useCallback(async()=>{
+    setLoading(true);setErro(false);
+    const{data,error}=await supabase.from('contas_bancarias').select('*').order('nome');
+    if(error)setErro(true);else setContas(data||[]);
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+  return{contas,loading,erro,refetch:load};
+}
+
+function BancarioView({onNovaConta,onEditar,onTransferir}:{onNovaConta:()=>void;onEditar:(c:any)=>void;onTransferir:()=>void}) {
+  const{contas,loading,erro,refetch}=useContasBancarias();
+  const[extrato,setExtrato]=useState<any[]>([]);
+  const[contaSelecionadaId,setContaSelecionadaId]=useState<string|null>(null);
+  const[loadingExtrato,setLoadingExtrato]=useState(false);
+
+  const saldoTotal=contas.filter(c=>c.ativa).reduce((a,c)=>a+Number(c.saldo_atual||0),0);
+
+  const verExtrato=async(contaId:string)=>{
+    setContaSelecionadaId(contaId);
+    setLoadingExtrato(true);
+    // Busca movimentos: entradas (CR recebidas) + saídas (CP pagas) + transferências
+    const[{data:entradas},{data:saidas},{data:transf}]=await Promise.all([
+      supabase.from('contas_receber').select('id,cliente_nome,descricao,valor,data_recebimento,status').eq('conta_bancaria_id',contaId).eq('status','Recebido').order('data_recebimento',{ascending:false}).limit(50),
+      supabase.from('contas_pagar').select('id,fornecedor_nome,descricao,valor,data_pagamento,status').eq('conta_bancaria_id',contaId).eq('status','Pago').order('data_pagamento',{ascending:false}).limit(50),
+      supabase.from('transferencias_bancarias').select('*').or(`conta_origem_id.eq.${contaId},conta_destino_id.eq.${contaId}`).order('created_at',{ascending:false}).limit(50),
+    ]);
+    const movs:any[]=[];
+    (entradas||[]).forEach(e=>movs.push({tipo:'credito',descricao:e.descricao||`Recebimento: ${e.cliente_nome}`,valor:Number(e.valor),data:e.data_recebimento,origem:'Contas a Receber'}));
+    (saidas||[]).forEach(s=>movs.push({tipo:'debito',descricao:s.descricao||`Pagamento: ${s.fornecedor_nome}`,valor:Number(s.valor),data:s.data_pagamento,origem:'Contas a Pagar'}));
+    (transf||[]).forEach(t=>{
+      if(t.conta_origem_id===contaId)movs.push({tipo:'debito',descricao:`Transferência → ${t.conta_destino_nome}`,valor:Number(t.valor),data:t.created_at,origem:'Transferência'});
+      else movs.push({tipo:'credito',descricao:`Transferência ← ${t.conta_origem_nome}`,valor:Number(t.valor),data:t.created_at,origem:'Transferência'});
+    });
+    movs.sort((a,b)=>new Date(b.data||0).getTime()-new Date(a.data||0).getTime());
+    setExtrato(movs);
+    setLoadingExtrato(false);
+  };
+
+  const excluir=async(id:string)=>{
+    if(!confirm('Excluir esta conta bancária? Esta ação não pode ser desfeita.'))return;
+    await supabase.from('contas_bancarias').delete().eq('id',id);refetch();
+  };
+
+  const contaSelecionada=contas.find(c=>c.id===contaSelecionadaId);
+
+  const TIPO_ICON:Record<string,React.ReactNode>={
+    'Conta Corrente':<CreditCard size={16} className="text-indigo-500"/>,
+    'Conta Poupança':<PiggyBank size={16} className="text-emerald-500"/>,
+    'Conta Investimento':<TrendingUp size={16} className="text-amber-500"/>,
+    'Carteira':<Wallet size={16} className="text-rose-500"/>,
+    'Outro':<Landmark size={16} className="text-slate-400"/>,
+  };
+
+  if(loading)return<LoadingSpinner label="Carregando contas bancárias..."/>;
+  return(
+    <div className="space-y-6">
+      <div className="flex justify-between items-end flex-wrap gap-3">
+        <div>
+          <h2 className="text-2xl md:text-3xl font-black">Controle Bancário</h2>
+          <p className="text-slate-500 text-sm">Gerencie suas contas bancárias e visualize movimentações</p>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={onTransferir} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">
+            <ArrowLeftRight size={15}/>Transferir entre Contas
+          </button>
+          <button onClick={refetch} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl border border-slate-200 bg-white"><RefreshCw size={17}/></button>
+          <button onClick={onNovaConta} className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all"><Plus size={15} strokeWidth={3}/>Nova Conta</button>
+        </div>
+      </div>
+
+      {erro&&<ErroTabela tabela="contas_bancarias"/>}
+
+      {/* Card saldo total */}
+      {!erro&&(
+        <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-3xl p-6 text-white">
+          <p className="text-white/70 text-xs font-black uppercase tracking-widest mb-1">Saldo Total Consolidado</p>
+          <p className="text-4xl font-black">R$ {saldoTotal.toFixed(2)}</p>
+          <p className="text-white/60 text-sm mt-2">{contas.filter(c=>c.ativa).length} conta{contas.filter(c=>c.ativa).length!==1?'s':''} ativa{contas.filter(c=>c.ativa).length!==1?'s':''}</p>
+        </div>
+      )}
+
+      {/* Grid de contas */}
+      {!erro&&contas.length===0&&(
+        <div className="bg-white rounded-3xl border border-slate-200 p-16 flex flex-col items-center gap-4 text-slate-300">
+          <Landmark size={48}/>
+          <p className="font-black text-slate-400 text-lg uppercase">Nenhuma conta cadastrada</p>
+          <button onClick={onNovaConta} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 mt-2"><Plus size={15} strokeWidth={3}/>Cadastrar Primeira Conta</button>
+        </div>
+      )}
+
+      {!erro&&contas.length>0&&(
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {contas.map(c=>(
+            <div key={c.id} className={cn('bg-white rounded-2xl border p-5 space-y-3 transition-all',c.ativa?'border-slate-200 hover:border-indigo-300':'border-dashed border-slate-200 opacity-60',contaSelecionadaId===c.id&&'border-indigo-400 ring-2 ring-indigo-100')}>
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-2">
+                  <div className={cn('p-2 rounded-xl',c.ativa?'bg-indigo-50':'bg-slate-100')}>
+                    {TIPO_ICON[c.tipo]||<Landmark size={16} className="text-slate-400"/>}
+                  </div>
+                  <div>
+                    <p className="font-black text-slate-800 text-sm leading-tight">{c.nome}</p>
+                    {c.banco&&<p className="text-xs text-slate-400 font-medium">{c.banco}</p>}
+                  </div>
+                </div>
+                {!c.ativa&&<span className="text-[10px] font-black uppercase bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full">Inativa</span>}
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">Saldo Atual</p>
+                <p className={cn('text-2xl font-black',Number(c.saldo_atual)>=0?'text-emerald-600':'text-rose-600')}>
+                  R$ {Number(c.saldo_atual||0).toFixed(2)}
+                </p>
+              </div>
+              {c.agencia&&<p className="text-xs text-slate-400">Ag: {c.agencia}{c.conta_numero?` • Cc: ${c.conta_numero}`:''}</p>}
+              {c.observacoes&&<p className="text-xs text-slate-400 italic">{c.observacoes}</p>}
+              <div className="flex gap-2 pt-1 border-t border-slate-100">
+                <button onClick={()=>verExtrato(c.id)} className={cn('flex-1 text-xs font-bold py-2 rounded-xl transition-all',contaSelecionadaId===c.id?'bg-indigo-600 text-white':'bg-slate-100 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600')}>
+                  {contaSelecionadaId===c.id?'📋 Extrato ativo':'Ver Extrato'}
+                </button>
+                <button onClick={()=>onEditar(c)} className="px-3 py-2 text-xs font-bold text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all">Editar</button>
+                <button onClick={()=>excluir(c.id)} className="px-3 py-2 text-xs font-bold text-rose-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all">Excluir</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Extrato da conta selecionada */}
+      {contaSelecionadaId&&(
+        <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
+          <div className="p-5 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h3 className="font-black text-slate-800">Extrato — {contaSelecionada?.nome}</h3>
+              <p className="text-xs text-slate-400 mt-0.5">Últimas movimentações registradas (recebimentos, pagamentos e transferências)</p>
+            </div>
+            <button onClick={()=>{setContaSelecionadaId(null);setExtrato([]);}} className="text-xs font-bold text-slate-400 hover:text-rose-500 px-3 py-1.5 rounded-xl hover:bg-rose-50 transition-all">✕ Fechar</button>
+          </div>
+          {loadingExtrato?<div className="p-8"><LoadingSpinner label="Carregando extrato..."/></div>:(
+            extrato.length===0
+              ?<div className="p-12 text-center text-slate-400"><p className="font-black">Nenhuma movimentação encontrada</p><p className="text-sm mt-1">Vincule contas a receber e a pagar a esta conta bancária.</p></div>
+              :<div className="overflow-x-auto">
+                <table className="w-full text-left min-w-[560px]">
+                  <thead><tr className="bg-slate-50 border-b border-slate-100">
+                    {['Data','Tipo','Origem','Descrição','Valor'].map(h=><th key={h} className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">{h}</th>)}
+                  </tr></thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {extrato.map((m,i)=>(
+                      <tr key={i} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-5 py-3 text-sm text-slate-500 whitespace-nowrap">{m.data?new Date(m.data).toLocaleDateString('pt-BR'):'—'}</td>
+                        <td className="px-5 py-3">
+                          <span className={cn('text-[10px] font-black uppercase px-2 py-1 rounded-full',m.tipo==='credito'?'bg-emerald-100 text-emerald-700':'bg-rose-100 text-rose-700')}>
+                            {m.tipo==='credito'?'Entrada':'Saída'}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3 text-xs text-slate-400 font-medium">{m.origem}</td>
+                        <td className="px-5 py-3 text-sm text-slate-700 max-w-[200px] truncate">{m.descricao}</td>
+                        <td className={cn('px-5 py-3 font-black text-sm',m.tipo==='credito'?'text-emerald-600':'text-rose-600')}>
+                          {m.tipo==='credito'?'+':'−'} R$ {m.valor.toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── MODAL NOVA CONTA BANCÁRIA ─────────────────────────────── */
+function ModalNovaContaBancaria({onClose}:{onClose:()=>void}) {
+  const[form,setForm]=useState({nome:'',banco:'',tipo:'Conta Corrente',agencia:'',conta_numero:'',saldo_inicial:'0',observacoes:'',ativa:true});
+  const[salvando,setSalvando]=useState(false);const[erro,setErro]=useState('');const[toast,setToast]=useState('');
+  const salvar=async()=>{
+    if(!form.nome.trim()){setErro('Nome da conta é obrigatório.');return;}
+    setSalvando(true);
+    const saldo=Number(form.saldo_inicial)||0;
+    const{error}=await supabase.from('contas_bancarias').insert({
+      nome:form.nome.trim(),banco:form.banco||null,tipo:form.tipo,
+      agencia:form.agencia||null,conta_numero:form.conta_numero||null,
+      saldo_inicial:saldo,saldo_atual:saldo,
+      observacoes:form.observacoes||null,ativa:true,
+    });
+    if(error){setErro('Erro: '+error.message);setSalvando(false);}
+    else{setToast('Conta bancária cadastrada! ✅');setTimeout(onClose,1400);}
+  };
+  return(<><ModalWrapper title="Nova Conta Bancária" onClose={onClose}>
+    {erro&&<MsgErro msg={erro}/>}
+    <Campo label="Nome da Conta *"><input type="text" placeholder="Ex: Banco do Brasil PJ, Caixa, Carteira..." value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} className={inputClass} autoFocus/></Campo>
+    <div className="grid grid-cols-2 gap-4">
+      <Campo label="Banco / Instituição"><input type="text" placeholder="Ex: Banco do Brasil" value={form.banco} onChange={e=>setForm({...form,banco:e.target.value})} className={inputClass}/></Campo>
+      <Campo label="Tipo de Conta">
+        <select value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value})} className={inputClass}>
+          {['Conta Corrente','Conta Poupança','Conta Investimento','Carteira','Outro'].map(t=><option key={t} value={t}>{t}</option>)}
+        </select>
+      </Campo>
+    </div>
+    <div className="grid grid-cols-2 gap-4">
+      <Campo label="Agência"><input type="text" placeholder="Ex: 1234-5" value={form.agencia} onChange={e=>setForm({...form,agencia:e.target.value})} className={inputClass}/></Campo>
+      <Campo label="Número da Conta"><input type="text" placeholder="Ex: 12345-6" value={form.conta_numero} onChange={e=>setForm({...form,conta_numero:e.target.value})} className={inputClass}/></Campo>
+    </div>
+    <Campo label="Saldo Inicial (R$)">
+      <input type="number" step="0.01" placeholder="0.00" value={form.saldo_inicial} onChange={e=>setForm({...form,saldo_inicial:e.target.value})} className={inputClass}/>
+      <p className="text-[11px] text-slate-400 mt-1">Informe o saldo atual real da conta para começar com o valor correto.</p>
+    </Campo>
+    <Campo label="Observações"><input type="text" placeholder="Anotações opcionais..." value={form.observacoes} onChange={e=>setForm({...form,observacoes:e.target.value})} className={inputClass}/></Campo>
+    <BotaoSalvar onClick={salvar} loading={salvando} label="Cadastrar Conta Bancária"/>
+  </ModalWrapper><AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
+}
+
+/* ── MODAL EDITAR CONTA BANCÁRIA ───────────────────────────── */
+function ModalEditarContaBancaria({conta,onClose}:{conta:any;onClose:()=>void}) {
+  const[form,setForm]=useState({
+    nome:conta.nome||'',banco:conta.banco||'',tipo:conta.tipo||'Conta Corrente',
+    agencia:conta.agencia||'',conta_numero:conta.conta_numero||'',
+    saldo_atual:String(conta.saldo_atual||0),
+    observacoes:conta.observacoes||'',ativa:conta.ativa!==false,
+  });
+  const[salvando,setSalvando]=useState(false);const[toast,setToast]=useState('');
+  const salvar=async()=>{
+    setSalvando(true);
+    await supabase.from('contas_bancarias').update({
+      nome:form.nome,banco:form.banco||null,tipo:form.tipo,
+      agencia:form.agencia||null,conta_numero:form.conta_numero||null,
+      saldo_atual:Number(form.saldo_atual),
+      observacoes:form.observacoes||null,ativa:form.ativa,
+      updated_at:new Date().toISOString(),
+    }).eq('id',conta.id);
+    setSalvando(false);setToast('Conta atualizada! ✅');setTimeout(onClose,1400);
+  };
+  return(<><ModalWrapper title={`Editar — ${conta.nome}`} onClose={onClose}>
+    <Campo label="Nome da Conta *"><input type="text" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} className={inputClass}/></Campo>
+    <div className="grid grid-cols-2 gap-4">
+      <Campo label="Banco"><input type="text" value={form.banco} onChange={e=>setForm({...form,banco:e.target.value})} className={inputClass}/></Campo>
+      <Campo label="Tipo">
+        <select value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value})} className={inputClass}>
+          {['Conta Corrente','Conta Poupança','Conta Investimento','Carteira','Outro'].map(t=><option key={t} value={t}>{t}</option>)}
+        </select>
+      </Campo>
+    </div>
+    <div className="grid grid-cols-2 gap-4">
+      <Campo label="Agência"><input type="text" value={form.agencia} onChange={e=>setForm({...form,agencia:e.target.value})} className={inputClass}/></Campo>
+      <Campo label="Número da Conta"><input type="text" value={form.conta_numero} onChange={e=>setForm({...form,conta_numero:e.target.value})} className={inputClass}/></Campo>
+    </div>
+    <Campo label="Saldo Atual (R$)">
+      <input type="number" step="0.01" value={form.saldo_atual} onChange={e=>setForm({...form,saldo_atual:e.target.value})} className={inputClass}/>
+      <p className="text-[11px] text-slate-400 mt-1">Ajuste manualmente se necessário para corrigir o saldo.</p>
+    </Campo>
+    <Campo label="Observações"><input type="text" value={form.observacoes} onChange={e=>setForm({...form,observacoes:e.target.value})} className={inputClass}/></Campo>
+    <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+      <input type="checkbox" id="ativa" checked={form.ativa} onChange={e=>setForm({...form,ativa:e.target.checked})} className="w-4 h-4 accent-indigo-600 cursor-pointer"/>
+      <label htmlFor="ativa" className="text-sm font-bold text-slate-700 cursor-pointer">Conta ativa</label>
+    </div>
+    <BotaoSalvar onClick={salvar} loading={salvando} label="Salvar Alterações"/>
+  </ModalWrapper><AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
+}
+
+/* ── MODAL TRANSFERÊNCIA ENTRE CONTAS ──────────────────────── */
+function ModalTransferenciaContas({onClose}:{onClose:()=>void}) {
+  const[contas,setContas]=useState<any[]>([]);
+  const[form,setForm]=useState({conta_origem_id:'',conta_destino_id:'',valor:'',descricao:'',data:new Date().toISOString().split('T')[0]});
+  const[salvando,setSalvando]=useState(false);const[erro,setErro]=useState('');const[toast,setToast]=useState('');
+  useEffect(()=>{supabase.from('contas_bancarias').select('id,nome,banco,saldo_atual').eq('ativa',true).order('nome').then(({data})=>setContas(data||[]));},[]);
+
+  const salvar=async()=>{
+    if(!form.conta_origem_id||!form.conta_destino_id){setErro('Selecione a conta de origem e destino.');return;}
+    if(form.conta_origem_id===form.conta_destino_id){setErro('Origem e destino devem ser contas diferentes.');return;}
+    const valor=Number(form.valor);
+    if(!valor||valor<=0){setErro('Informe um valor válido.');return;}
+    const origem=contas.find(c=>c.id===form.conta_origem_id);
+    const destino=contas.find(c=>c.id===form.conta_destino_id);
+    if(!origem||!destino){setErro('Conta não encontrada.');return;}
+    if(Number(origem.saldo_atual)<valor){setErro(`Saldo insuficiente na conta "${origem.nome}". Saldo: R$ ${Number(origem.saldo_atual).toFixed(2)}`);return;}
+    setSalvando(true);
+    // Grava a transferência
+    const{error}=await supabase.from('transferencias_bancarias').insert({
+      conta_origem_id:form.conta_origem_id,conta_origem_nome:origem.nome,
+      conta_destino_id:form.conta_destino_id,conta_destino_nome:destino.nome,
+      valor,descricao:form.descricao||null,data:form.data,
+    });
+    if(error){setErro('Erro: '+error.message);setSalvando(false);return;}
+    // Atualiza saldos
+    await Promise.all([
+      supabase.from('contas_bancarias').update({saldo_atual:Number(origem.saldo_atual)-valor,updated_at:new Date().toISOString()}).eq('id',origem.id),
+      supabase.from('contas_bancarias').update({saldo_atual:Number(destino.saldo_atual)+valor,updated_at:new Date().toISOString()}).eq('id',destino.id),
+    ]);
+    setSalvando(false);setToast('Transferência realizada! ✅');setTimeout(onClose,1600);
+  };
+
+  const origem=contas.find(c=>c.id===form.conta_origem_id);
+  const destino=contas.find(c=>c.id===form.conta_destino_id);
+
+  return(<><ModalWrapper title="Transferência entre Contas" onClose={onClose}>
+    {erro&&<MsgErro msg={erro}/>}
+    <div className="bg-slate-50 rounded-2xl p-4 space-y-4">
+      <Campo label="Conta de Origem (débito)">
+        <select value={form.conta_origem_id} onChange={e=>setForm({...form,conta_origem_id:e.target.value})} className={inputClass}>
+          <option value="">— Selecione a conta de origem —</option>
+          {contas.map(c=><option key={c.id} value={c.id}>{c.nome}{c.banco?` — ${c.banco}`:''} • Saldo: R$ {Number(c.saldo_atual||0).toFixed(2)}</option>)}
+        </select>
+      </Campo>
+      {/* Seta visual */}
+      <div className="flex items-center justify-center"><div className="flex items-center gap-2 text-slate-400"><div className="h-px w-16 bg-slate-200"/><ArrowLeftRight size={18} className="text-indigo-500 shrink-0"/><div className="h-px w-16 bg-slate-200"/></div></div>
+      <Campo label="Conta de Destino (crédito)">
+        <select value={form.conta_destino_id} onChange={e=>setForm({...form,conta_destino_id:e.target.value})} className={inputClass}>
+          <option value="">— Selecione a conta de destino —</option>
+          {contas.filter(c=>c.id!==form.conta_origem_id).map(c=><option key={c.id} value={c.id}>{c.nome}{c.banco?` — ${c.banco}`:''} • Saldo: R$ {Number(c.saldo_atual||0).toFixed(2)}</option>)}
+        </select>
+      </Campo>
+    </div>
+    {/* Preview */}
+    {origem&&destino&&(
+      <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 flex items-center justify-between gap-2 text-sm">
+        <div className="text-center"><p className="text-[10px] font-black text-slate-400 uppercase">De</p><p className="font-black text-slate-700">{origem.nome}</p><p className="text-rose-600 font-bold text-xs">− R$ {Number(form.valor||0).toFixed(2)}</p></div>
+        <ArrowLeftRight size={20} className="text-indigo-400 shrink-0"/>
+        <div className="text-center"><p className="text-[10px] font-black text-slate-400 uppercase">Para</p><p className="font-black text-slate-700">{destino.nome}</p><p className="text-emerald-600 font-bold text-xs">+ R$ {Number(form.valor||0).toFixed(2)}</p></div>
+      </div>
+    )}
+    <div className="grid grid-cols-2 gap-4">
+      <Campo label="Valor (R$) *"><input type="number" step="0.01" min="0.01" placeholder="0.00" value={form.valor} onChange={e=>setForm({...form,valor:e.target.value})} className={inputClass}/></Campo>
+      <Campo label="Data"><input type="date" value={form.data} onChange={e=>setForm({...form,data:e.target.value})} className={inputClass}/></Campo>
+    </div>
+    <Campo label="Descrição"><input type="text" placeholder="Ex: Transferência para reserva..." value={form.descricao} onChange={e=>setForm({...form,descricao:e.target.value})} className={inputClass}/></Campo>
+    <BotaoSalvar onClick={salvar} loading={salvando} label="Confirmar Transferência"/>
+  </ModalWrapper><AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
 }
 
 /* ── PAINEL DE LUCRATIVIDADE ───────────────────────────────── */
@@ -2298,10 +2711,10 @@ function LucratividadeView() {
               ['Código','Cliente','Data','Receita','Custo Insumos','Lucro','Margem%'],
               ...dados.vendasDetalhadas.map((p:any)=>[`#${p.codigo}`,p.clientes?.nome||p.cliente_nome_avulso||'—',new Date(p.updated_at||p.created_at).toLocaleDateString('pt-BR'),p.receita,p.custo,p.lucro,p.margem.toFixed(1)])
             ];
-            const ws=xls.utils.aoa_to_sheet(wsData);
+            const ws=XLSX.utils.aoa_to_sheet(wsData);
             ws['!cols']=[{wch:10},{wch:28},{wch:12},{wch:12},{wch:14},{wch:12},{wch:10}];
-            const wb=xls.utils.book_new();xls.utils.book_append_sheet(wb,ws,'Lucratividade');
-            xls.writeFile(wb,'lucratividade.xls');
+            const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Lucratividade');
+            XLSX.writeFile(wb,'lucratividade.xlsx');
           }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-bold bg-white border border-slate-200 text-emerald-700 hover:bg-emerald-50 transition-all">
             <Download size={14}/>Exportar XLS
           </button>}
@@ -2509,6 +2922,77 @@ function ModalPerfilCliente({cliente,onClose,onEditar}:{cliente:any;onClose:()=>
       )}
       <button onClick={()=>{onClose();setTimeout(()=>onEditar(cliente),100);}} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl font-bold text-sm shadow-lg transition-all">✏️ Editar Dados do Cliente</button>
     </ModalWrapper>
+  );
+}
+
+/* ── MODAL NOVO INSUMO ─────────────────────────────────────── */
+function ModalNovoInsumo({onClose}:{onClose:()=>void}) {
+  const[form,setForm]=useState({
+    nome:'',tipo:'papel',unidade_medida:'folha',
+    custo_unitario:'0',estoque_atual:'0',estoque_minimo:'0',
+    gramatura:'',observacoes:''
+  });
+  const[salvando,setSalvando]=useState(false);
+  const[erro,setErro]=useState('');
+  const[toast,setToast]=useState('');
+
+  const salvar=async()=>{
+    if(!form.nome.trim()){setErro('Nome do insumo é obrigatório.');return;}
+    setSalvando(true);
+    const{error}=await supabase.from('insumos').insert({
+      nome:form.nome.trim(),
+      tipo:form.tipo,
+      unidade_medida:form.unidade_medida,
+      custo_unitario:Number(form.custo_unitario)||0,
+      estoque_atual:Number(form.estoque_atual)||0,
+      estoque_minimo:Number(form.estoque_minimo)||0,
+      gramatura:form.gramatura?Number(form.gramatura):null,
+      observacoes:form.observacoes||null,
+      ativo:true,
+    });
+    if(error){setErro('Erro ao salvar: '+error.message);setSalvando(false);}
+    else{setToast('Insumo cadastrado! ✅');setTimeout(onClose,1400);}
+  };
+
+  return(
+    <><ModalWrapper title="Novo Insumo" onClose={onClose}>
+      {erro&&<MsgErro msg={erro}/>}
+      <Campo label="Nome *">
+        <input type="text" placeholder="Ex: Papel Offset 90g" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} className={inputClass} autoFocus/>
+      </Campo>
+      <div className="grid grid-cols-2 gap-4">
+        <Campo label="Tipo">
+          <select value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value})} className={inputClass}>
+            {['papel','tinta','fita','cola','vinil','embalagem','outro'].map(t=><option key={t} value={t}>{t}</option>)}
+          </select>
+        </Campo>
+        <Campo label="Unidade de Medida">
+          <select value={form.unidade_medida} onChange={e=>setForm({...form,unidade_medida:e.target.value})} className={inputClass}>
+            {['folha','ml','metro','unidade','kg','litro'].map(u=><option key={u} value={u}>{u}</option>)}
+          </select>
+        </Campo>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <Campo label="Custo Unit. (R$)">
+          <input type="number" step="0.0001" min="0" placeholder="0.0000" value={form.custo_unitario} onChange={e=>setForm({...form,custo_unitario:e.target.value})} className={inputClass}/>
+        </Campo>
+        <Campo label="Estoque Atual">
+          <input type="number" step="0.01" min="0" placeholder="0" value={form.estoque_atual} onChange={e=>setForm({...form,estoque_atual:e.target.value})} className={inputClass}/>
+        </Campo>
+        <Campo label="Estoque Mínimo">
+          <input type="number" step="0.01" min="0" placeholder="0" value={form.estoque_minimo} onChange={e=>setForm({...form,estoque_minimo:e.target.value})} className={inputClass}/>
+        </Campo>
+      </div>
+      <Campo label="Gramatura g/m² (apenas para papéis)">
+        <input type="number" step="0.1" min="0" placeholder="Ex: 90" value={form.gramatura} onChange={e=>setForm({...form,gramatura:e.target.value})} className={inputClass}/>
+      </Campo>
+      <Campo label="Observações">
+        <input type="text" placeholder="Observações opcionais..." value={form.observacoes} onChange={e=>setForm({...form,observacoes:e.target.value})} className={inputClass}/>
+      </Campo>
+      <BotaoSalvar onClick={salvar} loading={salvando} label="Cadastrar Insumo"/>
+    </ModalWrapper>
+    <AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence>
+    </>
   );
 }
 
