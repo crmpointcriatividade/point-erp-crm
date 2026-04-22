@@ -14,4 +14,16 @@ export default defineConfig({
     port: 3000,
     hmr: true,
   },
+  build: {
+    // XLSX é carregado via CDN no index.html (window.XLSX),
+    // por isso marcamos como external para o Rollup não tentar empacotá-lo
+    rollupOptions: {
+      external: ['xlsx'],
+      output: {
+        globals: {
+          xlsx: 'XLSX',
+        },
+      },
+    },
+  },
 });
