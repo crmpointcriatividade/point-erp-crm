@@ -125,27 +125,39 @@ export default function App() {
   const[contaBancariaSelecionada,setContaBancariaSelecionada]=useState<any|null>(null);
 
   const login=(u:AppUser)=>{
+    // Grava sessão ANTES de setar o user, garantindo que o estado
+    // seja consistente quando o componente re-renderiza
     sessionStorage.setItem('point_user',JSON.stringify(u));
-    // Limpa qualquer hash antigo e redefine aba inicial
     window.history.replaceState(null,'',window.location.pathname);
-    setActiveTab('kanban');
-    setGlobalKey(k=>k+1);
-    setUser({...u});
-  };
-  const logout=()=>{
-    sessionStorage.removeItem('point_user');
-    // Limpa hash da URL ao sair
-    window.history.replaceState(null,'',window.location.pathname);
+    // Reseta todas as chaves de refresh para forçar reload dos dados
+    setGlobalKey(1);setKanbanKey(1);setContasKey(1);setCaixaKey(1);setBancarioKey(1);setComprasKey(1);
     setActiveTab('kanban');
     setModal(null);
     setSidebarOpen(false);
     setSearchQuery('');
-    setGlobalKey(0);
-    setKanbanKey(0);
-    setContasKey(0);
-    setCaixaKey(0);
-    setBancarioKey(0);
-    setComprasKey(0);
+    // setUser por último para triggerar o re-render correto
+    setUser({...u});
+  };
+  const logout=()=>{
+    // Remove sessão ANTES de limpar user para evitar flash de tela
+    sessionStorage.removeItem('point_user');
+    window.history.replaceState(null,'',window.location.pathname);
+    // Reseta todo o estado de navegação
+    setActiveTab('kanban');
+    setModal(null);
+    setSidebarOpen(false);
+    setSearchQuery('');
+    setPedidoSelecionado(null);
+    setCompraSelecionada(null);
+    setClienteSelecionadoEdit(null);
+    setFornecedorSelecionadoEdit(null);
+    setInsumoSelecionadoEdit(null);
+    setProdutoSelecionadoEdit(null);
+    setCrSelecionado(null);
+    setCpSelecionado(null);
+    setContaBancariaSelecionada(null);
+    setGlobalKey(0);setKanbanKey(0);setContasKey(0);setCaixaKey(0);setBancarioKey(0);setComprasKey(0);
+    // setUser por último para triggerar o unmount correto
     setUser(null);
   };
 
@@ -379,6 +391,19 @@ function KanbanView({searchQuery,onNovoPedido,onAbrirDetalhe}:{searchQuery:strin
   const[filtroStatus,setFiltroStatus]=useState<string|null>(null);
   const[filtroPeriodo,setFiltroPeriodo]=useState('');
   const[mostrarFiltros,setMostrarFiltros]=useState(false);
+  const kanbanRef=useRef<HTMLDivElement>(null);
+
+  // Scroll automático para a coluna filtrada
+  const aplicarFiltroStatus=(status:string|null)=>{
+    setFiltroStatus(status);
+    if(status&&kanbanRef.current){
+      // Aguarda o re-render antes de scrollar
+      setTimeout(()=>{
+        const col=kanbanRef.current?.querySelector(`[data-status="${status}"]`);
+        if(col)col.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+      },80);
+    }
+  };
 
   const pedidosFiltrados=pedidos.filter(p=>{
     if(filtroStatus){
@@ -441,12 +466,12 @@ function KanbanView({searchQuery,onNovoPedido,onAbrirDetalhe}:{searchQuery:strin
                 <div className="flex-1 min-w-[200px]">
                   <p className="text-xs font-bold text-slate-400 uppercase mb-1.5">Coluna / Status</p>
                   <div className="flex gap-1.5 flex-wrap">
-                    <button onClick={()=>setFiltroStatus(null)} className={cn('px-3 py-1.5 rounded-xl text-xs font-bold transition-all',!filtroStatus?'bg-indigo-600 text-white':'bg-slate-100 text-slate-500 hover:bg-slate-200')}>Todas</button>
+                    <button onClick={()=>aplicarFiltroStatus(null)} className={cn('px-3 py-1.5 rounded-xl text-xs font-bold transition-all',!filtroStatus?'bg-indigo-600 text-white':'bg-slate-100 text-slate-500 hover:bg-slate-200')}>Todas</button>
                     {statuses.map(s=>{
                       const cc=STATUS_PEDIDO_CORES[s.nome]||'bg-slate-100 border-slate-200 text-slate-600';
                       const cnt=pedidos.filter(p=>p.status_id===s.id).length;
                       return(
-                        <button key={s.id} onClick={()=>setFiltroStatus(filtroStatus===s.nome?null:s.nome)}
+                        <button key={s.id} onClick={()=>aplicarFiltroStatus(filtroStatus===s.nome?null:s.nome)}
                           className={cn('px-3 py-1.5 rounded-xl text-xs font-bold transition-all border',filtroStatus===s.nome?'bg-indigo-600 text-white border-indigo-600':cc)}>
                           {s.nome} <span className="opacity-70">({cnt})</span>
                         </button>
@@ -467,14 +492,14 @@ function KanbanView({searchQuery,onNovoPedido,onAbrirDetalhe}:{searchQuery:strin
         )}
       </AnimatePresence>
 
-      <div className="flex gap-4 overflow-x-auto pb-4" style={{minHeight:'calc(100vh - 300px)'}}>
+      <div ref={kanbanRef} className="flex gap-4 overflow-x-auto pb-4" style={{minHeight:'calc(100vh - 300px)'}}>
         {statuses.map(status=>{
           const col=pedidosFiltrados.filter(p=>p.status_id===status.id);
           const colTotal=pedidos.filter(p=>p.status_id===status.id).length;
           const cc=STATUS_PEDIDO_CORES[status.nome]||'bg-slate-100 border-slate-200 text-slate-600';
           const next=statuses.find(s=>s.ordem===status.ordem+1);
           return(
-            <div key={status.id} className="w-72 md:w-80 flex-shrink-0 flex flex-col">
+            <div key={status.id} data-status={status.nome} className="w-72 md:w-80 flex-shrink-0 flex flex-col">
               <div className={cn('flex items-center justify-between p-4 rounded-t-2xl border-b-2',cc)}>
                 <h3 className="font-black text-xs uppercase tracking-widest">{status.nome}</h3>
                 <span className="text-[10px] font-black bg-white/60 px-2 py-0.5 rounded-full">
@@ -787,22 +812,43 @@ function InsumosView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd:()=>
   const importarXLS=async(e:React.ChangeEvent<HTMLInputElement>)=>{
     const file=e.target.files?.[0];if(!file)return;
     setImportando(true);
-    const buf=await file.arrayBuffer();
-    const wb=XLSX.read(buf,{type:'buffer'});
-    const ws=wb.Sheets[wb.SheetNames[0]];
-    const rows:any[][]=XLSX.utils.sheet_to_json(ws,{header:1});
-    const dataRows=rows.slice(1).filter((r:any[])=>r[0]);
-    let ok=0,erros=0;
-    for(const cols of dataRows){
-      const{error}=await supabase.from('insumos').upsert({
-        nome:String(cols[0]),tipo:String(cols[1]||'outro'),unidade_medida:String(cols[2]||'unidade'),
-        custo_unitario:Number(cols[3])||0,estoque_atual:Number(cols[4])||0,
-        estoque_minimo:Number(cols[5])||0,gramatura:cols[6]?Number(cols[6]):null,ativo:true
-      },{onConflict:'nome'});
-      if(error)erros++;else ok++;
+    try{
+      const buf=await file.arrayBuffer();
+      const wb=XLSX.read(buf,{type:'buffer'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows:any[][]=XLSX.utils.sheet_to_json(ws,{header:1});
+      const dataRows=rows.slice(1).filter((r:any[])=>r[0]);
+      let ok=0,erros=0;
+      for(const cols of dataRows){
+        const nome=String(cols[0]||'').trim();
+        if(!nome)continue;
+        // Busca pelo nome exato para decidir insert ou update
+        const{data:exist}=await supabase.from('insumos').select('id').eq('nome',nome).eq('ativo',true).maybeSingle();
+        const payload={
+          nome,
+          tipo:String(cols[1]||'outro'),
+          unidade_medida:String(cols[2]||'unidade'),
+          custo_unitario:Number(cols[3])||0,
+          estoque_atual:Number(cols[4])||0,
+          estoque_minimo:Number(cols[5])||0,
+          gramatura:cols[6]?Number(cols[6]):null,
+          ativo:true,
+          updated_at:new Date().toISOString(),
+        };
+        let error;
+        if(exist?.id){
+          ({error}=await supabase.from('insumos').update(payload).eq('id',exist.id));
+        } else {
+          ({error}=await supabase.from('insumos').insert(payload));
+        }
+        if(error){console.error('Erro importação:',nome,error.message);erros++;}else ok++;
+      }
+      setImportando(false);refetch();
+      alert(`Importação concluída! ✅\n${ok} insumos importados/atualizados.\n${erros>0?erros+' erros.':''}`);
+    }catch(err:any){
+      setImportando(false);
+      alert(`Erro ao ler o arquivo XLS: ${err?.message||err}\n\nVerifique se o arquivo é um .xlsx válido e não está corrompido.`);
     }
-    setImportando(false);refetch();
-    alert(`Importação concluída! ✅\n${ok} insumos importados/atualizados.\n${erros>0?erros+' erros.':''}`);
     if(fileInputRef.current)fileInputRef.current.value='';
   };
 
@@ -1294,7 +1340,38 @@ function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
       nota_fiscal:notaFiscal||null,
       observacoes:observacoes||null,
     }).eq('id',compra.id);
-    setSalvando(false);setToast('Compra salva!');setToastColor('emerald');
+
+    // Se status mudou para Recebido → atualiza estoque com custo médio ponderado
+    if(status==='Recebido'&&compra.status!=='Recebido'){
+      await atualizarEstoqueCompra(itens);
+      setToast('Compra salva e estoque atualizado! ✅');setToastColor('emerald');
+    } else {
+      setToast('Compra salva!');setToastColor('emerald');
+    }
+    setSalvando(false);
+  };
+
+  // Função auxiliar: atualiza estoque com custo médio ponderado
+  const atualizarEstoqueCompra=async(itensCompra:any[])=>{
+    for(const item of itensCompra){
+      if(!item.descricao?.trim()||!item.quantidade||!item.valor_unitario)continue;
+      // Tenta encontrar o insumo pelo nome da descrição
+      const{data:insumos}=await supabase.from('insumos').select('id,estoque_atual,custo_unitario').ilike('nome',`%${item.descricao.trim()}%`).eq('ativo',true).limit(1);
+      if(!insumos||insumos.length===0)continue;
+      const ins=insumos[0];
+      const qtdAtual=Number(ins.estoque_atual)||0;
+      const custoAtual=Number(ins.custo_unitario)||0;
+      const qtdComprada=Number(item.quantidade)||0;
+      const custoCompra=Number(item.valor_unitario)||0;
+      // Custo médio ponderado = (qtd_atual × custo_atual + qtd_comprada × custo_compra) / (qtd_atual + qtd_comprada)
+      const novaQtd=qtdAtual+qtdComprada;
+      const novoCusto=novaQtd>0?((qtdAtual*custoAtual)+(qtdComprada*custoCompra))/novaQtd:custoCompra;
+      await supabase.from('insumos').update({
+        estoque_atual:novaQtd,
+        custo_unitario:Number(novoCusto.toFixed(6)),
+        updated_at:new Date().toISOString(),
+      }).eq('id',ins.id);
+    }
   };
 
   const enviarContasPagar=async()=>{
@@ -1309,7 +1386,11 @@ function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
       status:'Aguardando',
     });
     await supabase.from('compras').update({status:'Recebido'}).eq('id',compra.id);
-    setSalvando(false);setToast('Lançado em Contas a Pagar! ✅');setToastColor('indigo');setTimeout(onClose,1800);
+    // Atualiza estoque com custo médio ponderado ao receber a compra
+    if(compra.status!=='Recebido'){
+      await atualizarEstoqueCompra(itens);
+    }
+    setSalvando(false);setToast('Lançado em Contas a Pagar e estoque atualizado! ✅');setToastColor('indigo');setTimeout(onClose,1800);
   };
 
   return(
@@ -1398,9 +1479,14 @@ function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
           {salvando?'Salvando...':'💾 Salvar Alterações'}
         </button>
       </div>
+      {status==='Recebido'&&compra.status!=='Recebido'&&(
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 text-emerald-700 text-xs font-bold flex items-center gap-2">
+          <CheckCircle2 size={13}/>Ao salvar com status Recebido, o estoque dos insumos será atualizado automaticamente com custo médio ponderado.
+        </div>
+      )}
       <button onClick={enviarContasPagar} disabled={salvando}
         className="w-full bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-rose-100 transition-all flex items-center justify-center gap-2">
-        <TrendingDown size={16}/>Enviar para Contas a Pagar
+        <TrendingDown size={16}/>Enviar para Contas a Pagar {compra.status!=='Recebido'?'(+ atualiza estoque)':''}
       </button>
     </ModalWrapper>
     <AnimatePresence>{toast&&<Toast message={toast} color={toastColor} onClose={()=>setToast('')}/>}</AnimatePresence>
@@ -2622,7 +2708,7 @@ function LucratividadeView() {
     // 1. Vendas finalizadas no período
     const{data:pedidosData}=await supabase
       .from('pedidos')
-      .select('id,codigo,valor_total,created_at,updated_at,kanban_status(nome),clientes(nome),cliente_nome_avulso')
+      .select('id,codigo,valor_total,custo_insumos_snapshot,created_at,updated_at,kanban_status(nome),clientes(nome),cliente_nome_avulso')
       .gte('updated_at',de+'T00:00:00')
       .lte('updated_at',ate+'T23:59:59');
     const vendas=(pedidosData||[]).filter((p:any)=>p.kanban_status?.nome==='Finalizado');
