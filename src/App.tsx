@@ -1226,52 +1226,79 @@ function FornecedoresView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd
 /* ── COMPRAS ───────────────────────────────────────────────── */
 /* ── FUNÇÃO UTILITÁRIA: atualiza estoque com custo médio ponderado ── */
 // Usada tanto pelo badge da lista quanto pelo modal de detalhe
-async function atualizarEstoqueItens(itensCompra:any[]):Promise<{ok:number;naoEncontrados:string[]}> {
+async function atualizarEstoqueItens(itensCompra:any):Promise<{ok:number;naoEncontrados:string[]}> {
+  // Garante que itens é sempre um array — o JSONB do Supabase pode vir como string
+  let lista:any[]=[];
+  if(Array.isArray(itensCompra)) lista=itensCompra;
+  else if(typeof itensCompra==='string'){try{lista=JSON.parse(itensCompra);}catch{lista=[];}}
+  else lista=[];
+
   let ok=0;
   const naoEncontrados:string[]=[];
-  for(const item of itensCompra){
+
+  for(const item of lista){
     const qtdComprada=Number(item.quantidade)||0;
     const custoCompra=Number(item.valor_unitario)||0;
-    if(!qtdComprada||!item.descricao?.trim())continue;
+    const nomeItem=(item.descricao||item.nome||'').trim();
+    if(!qtdComprada||!nomeItem) continue;
 
     let insumo:any=null;
 
-    // 1. Por insumo_id (quando item foi adicionado via busca — mais confiável)
+    // 1. Por insumo_id — fonte mais confiável
     if(item.insumo_id){
       const{data}=await supabase.from('insumos')
         .select('id,nome,estoque_atual,custo_unitario')
         .eq('id',item.insumo_id).eq('ativo',true).maybeSingle();
-      insumo=data;
+      insumo=data||null;
     }
-    // 2. Por nome exato (case-insensitive)
+
+    // 2. Nome exato (ilike sem wildcards = match exato case-insensitive)
     if(!insumo){
       const{data}=await supabase.from('insumos')
         .select('id,nome,estoque_atual,custo_unitario')
-        .ilike('nome',item.descricao.trim()).eq('ativo',true).maybeSingle();
-      insumo=data;
+        .ilike('nome',nomeItem).eq('ativo',true).maybeSingle();
+      insumo=data||null;
     }
-    // 3. Por nome parcial (último recurso)
+
+    // 3. Nome contendo o texto
     if(!insumo){
       const{data}=await supabase.from('insumos')
         .select('id,nome,estoque_atual,custo_unitario')
-        .ilike('nome',`%${item.descricao.trim()}%`).eq('ativo',true).limit(1);
+        .ilike('nome',`%${nomeItem}%`).eq('ativo',true).limit(1);
       insumo=data?.[0]||null;
     }
 
-    if(!insumo){naoEncontrados.push(item.descricao);continue;}
+    // 4. Texto contido no nome do insumo (invertido)
+    if(!insumo&&nomeItem.length>4){
+      const palavras=nomeItem.split(' ').filter((p:string)=>p.length>3);
+      for(const palavra of palavras){
+        const{data}=await supabase.from('insumos')
+          .select('id,nome,estoque_atual,custo_unitario')
+          .ilike('nome',`%${palavra}%`).eq('ativo',true).limit(1);
+        if(data?.[0]){insumo=data[0];break;}
+      }
+    }
+
+    if(!insumo){naoEncontrados.push(nomeItem);continue;}
 
     const qtdAtual=Number(insumo.estoque_atual)||0;
     const custoAtual=Number(insumo.custo_unitario)||0;
     const novaQtd=qtdAtual+qtdComprada;
-    // Custo Médio Ponderado = (qtd_atual × custo_atual + qtd_comprada × custo_compra) / qtd_total
-    const novoCusto=novaQtd>0?((qtdAtual*custoAtual)+(qtdComprada*custoCompra))/novaQtd:custoCompra;
+
+    // Custo Médio Ponderado
+    // Se custo da compra é 0, mantém o custo atual
+    const novoCusto= custoCompra>0&&novaQtd>0
+      ? ((qtdAtual*custoAtual)+(qtdComprada*custoCompra))/novaQtd
+      : custoAtual;
 
     const{error}=await supabase.from('insumos').update({
       estoque_atual:Number(novaQtd.toFixed(4)),
       custo_unitario:Number(novoCusto.toFixed(6)),
       updated_at:new Date().toISOString(),
     }).eq('id',insumo.id);
-    if(!error)ok++;
+
+    if(error){console.error('Erro ao atualizar insumo',insumo.nome,error);naoEncontrados.push(nomeItem);}
+    else ok++;
   }
   return{ok,naoEncontrados};
 }
@@ -1341,10 +1368,15 @@ function ComprasView({searchQuery,onAdd,onAbrirDetalhe}:{searchQuery:string;onAd
                   <td className="px-5 py-4 text-sm text-slate-500">{c.nota_fiscal||'—'}</td>
                   <td className="px-5 py-4 font-black text-indigo-600 text-sm">R$ {Number(c.total||0).toFixed(2)}</td>
                   <td className="px-5 py-4"><BadgeStatus status={c.status||'Pendente'} options={STATUS_COMPRA} onChange={async s=>{
+                    // Busca status atual do banco para garantir que não duplica
+                    const{data:atual}=await supabase.from('compras').select('status').eq('id',c.id).maybeSingle();
                     await supabase.from('compras').update({status:s}).eq('id',c.id);
-                    // Se mudou para Recebido e ainda não estava → atualiza estoque
-                    if(s==='Recebido'&&c.status!=='Recebido'){
-                      await atualizarEstoqueItens(c.itens||[]);
+                    if(s==='Recebido'&&atual?.status!=='Recebido'){
+                      const{ok,naoEncontrados}=await atualizarEstoqueItens(c.itens||[]);
+                      const msg=naoEncontrados.length>0
+                        ?`${ok} insumo(s) atualizado(s). Não encontrado(s): ${naoEncontrados.join(', ')}`
+                        :`${ok} insumo(s) atualizado(s) no estoque ✅`;
+                      alert('Estoque atualizado!\n'+msg);
                     }
                     load();
                   }}/></td>
@@ -1363,10 +1395,12 @@ function ComprasView({searchQuery,onAdd,onAbrirDetalhe}:{searchQuery:string;onAd
 function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
   const{fornecedores}=useFornecedores();
   const[status,setStatus]=useState(compra.status||'Pendente');
-  const[itens,setItens]=useState<any[]>(compra.itens||[]);
+  const[itens,setItens]=useState<any[]>(Array.isArray(compra.itens)?compra.itens:typeof compra.itens==='string'?JSON.parse(compra.itens||'[]'):[]);
   const[salvando,setSalvando]=useState(false);
   const[toast,setToast]=useState('');
   const[toastColor,setToastColor]=useState<'emerald'|'indigo'|'rose'>('emerald');
+  // Controla se o estoque desta compra já foi atualizado para evitar dupla contagem
+  const estoqueJaAtualizado=useRef(compra.status==='Recebido');
   // Campos editáveis de cabeçalho
   const[fornNome,setFornNome]=useState(compra.fornecedor_nome||'');
   const[data,setData]=useState(compra.data?compra.data.slice(0,10):'');
@@ -1399,14 +1433,17 @@ function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
       observacoes:observacoes||null,
     }).eq('id',compra.id);
 
-    if(status==='Recebido'&&compra.status!=='Recebido'){
+    // Atualiza estoque APENAS se está marcando Recebido pela primeira vez
+    // Usa ref para não depender da prop original (que é imutável)
+    if(status==='Recebido'&&!estoqueJaAtualizado.current){
       const{ok,naoEncontrados}=await atualizarEstoqueItens(itens);
+      estoqueJaAtualizado.current=true; // evita dupla contagem em salvamentos futuros
       setSalvando(false);
       if(naoEncontrados.length>0){
-        setToast(`Salvo! ${ok} insumo(s) atualizado(s). Não encontrado(s): ${naoEncontrados.join(', ')}`);
+        setToast(`Salvo! ${ok} insumo(s) atualizado(s). Não encontrado(s) no cadastro: ${naoEncontrados.join(', ')}`);
         setToastColor('indigo');
       } else {
-        setToast(`Compra salva e ${ok} insumo(s) atualizado(s) no estoque! ✅`);
+        setToast(`Compra salva! ${ok} insumo(s) atualizado(s) no estoque ✅`);
         setToastColor('emerald');
       }
     } else {
@@ -1427,11 +1464,12 @@ function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
       status:'Aguardando',
     });
     await supabase.from('compras').update({status:'Recebido'}).eq('id',compra.id);
-    if(compra.status!=='Recebido'){
+    if(!estoqueJaAtualizado.current){
       const{ok,naoEncontrados}=await atualizarEstoqueItens(itens);
+      estoqueJaAtualizado.current=true;
       setSalvando(false);
       const msg=naoEncontrados.length>0
-        ?`Lançado em Contas a Pagar! ${ok} insumo(s) atualizado(s). Não encontrado(s): ${naoEncontrados.join(', ')}`
+        ?`Lançado em CP! ${ok} insumo(s) atualizado(s). Não encontrado(s): ${naoEncontrados.join(', ')}`
         :`Lançado em Contas a Pagar e ${ok} insumo(s) atualizado(s) no estoque! ✅`;
       setToast(msg);setToastColor('indigo');
     } else {
