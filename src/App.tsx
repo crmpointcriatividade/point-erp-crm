@@ -1224,6 +1224,58 @@ function FornecedoresView({searchQuery,onAdd,onEditar}:{searchQuery:string;onAdd
 }
 
 /* ── COMPRAS ───────────────────────────────────────────────── */
+/* ── FUNÇÃO UTILITÁRIA: atualiza estoque com custo médio ponderado ── */
+// Usada tanto pelo badge da lista quanto pelo modal de detalhe
+async function atualizarEstoqueItens(itensCompra:any[]):Promise<{ok:number;naoEncontrados:string[]}> {
+  let ok=0;
+  const naoEncontrados:string[]=[];
+  for(const item of itensCompra){
+    const qtdComprada=Number(item.quantidade)||0;
+    const custoCompra=Number(item.valor_unitario)||0;
+    if(!qtdComprada||!item.descricao?.trim())continue;
+
+    let insumo:any=null;
+
+    // 1. Por insumo_id (quando item foi adicionado via busca — mais confiável)
+    if(item.insumo_id){
+      const{data}=await supabase.from('insumos')
+        .select('id,nome,estoque_atual,custo_unitario')
+        .eq('id',item.insumo_id).eq('ativo',true).maybeSingle();
+      insumo=data;
+    }
+    // 2. Por nome exato (case-insensitive)
+    if(!insumo){
+      const{data}=await supabase.from('insumos')
+        .select('id,nome,estoque_atual,custo_unitario')
+        .ilike('nome',item.descricao.trim()).eq('ativo',true).maybeSingle();
+      insumo=data;
+    }
+    // 3. Por nome parcial (último recurso)
+    if(!insumo){
+      const{data}=await supabase.from('insumos')
+        .select('id,nome,estoque_atual,custo_unitario')
+        .ilike('nome',`%${item.descricao.trim()}%`).eq('ativo',true).limit(1);
+      insumo=data?.[0]||null;
+    }
+
+    if(!insumo){naoEncontrados.push(item.descricao);continue;}
+
+    const qtdAtual=Number(insumo.estoque_atual)||0;
+    const custoAtual=Number(insumo.custo_unitario)||0;
+    const novaQtd=qtdAtual+qtdComprada;
+    // Custo Médio Ponderado = (qtd_atual × custo_atual + qtd_comprada × custo_compra) / qtd_total
+    const novoCusto=novaQtd>0?((qtdAtual*custoAtual)+(qtdComprada*custoCompra))/novaQtd:custoCompra;
+
+    const{error}=await supabase.from('insumos').update({
+      estoque_atual:Number(novaQtd.toFixed(4)),
+      custo_unitario:Number(novoCusto.toFixed(6)),
+      updated_at:new Date().toISOString(),
+    }).eq('id',insumo.id);
+    if(!error)ok++;
+  }
+  return{ok,naoEncontrados};
+}
+
 function ComprasView({searchQuery,onAdd,onAbrirDetalhe}:{searchQuery:string;onAdd:()=>void;onAbrirDetalhe:(c:Compra)=>void}) {
   const[compras,setCompras]=useState<Compra[]>([]);
   const[loading,setLoading]=useState(true);
@@ -1288,7 +1340,14 @@ function ComprasView({searchQuery,onAdd,onAbrirDetalhe}:{searchQuery:string;onAd
                   <td className="px-5 py-4 text-sm text-slate-500">{c.data?new Date(c.data).toLocaleDateString('pt-BR'):'—'}</td>
                   <td className="px-5 py-4 text-sm text-slate-500">{c.nota_fiscal||'—'}</td>
                   <td className="px-5 py-4 font-black text-indigo-600 text-sm">R$ {Number(c.total||0).toFixed(2)}</td>
-                  <td className="px-5 py-4"><BadgeStatus status={c.status||'Pendente'} options={STATUS_COMPRA} onChange={async s=>{await supabase.from('compras').update({status:s}).eq('id',c.id);load();}}/></td>
+                  <td className="px-5 py-4"><BadgeStatus status={c.status||'Pendente'} options={STATUS_COMPRA} onChange={async s=>{
+                    await supabase.from('compras').update({status:s}).eq('id',c.id);
+                    // Se mudou para Recebido e ainda não estava → atualiza estoque
+                    if(s==='Recebido'&&c.status!=='Recebido'){
+                      await atualizarEstoqueItens(c.itens||[]);
+                    }
+                    load();
+                  }}/></td>
                   <td className="px-5 py-4"><div className="flex gap-2"><button onClick={()=>onAbrirDetalhe(c)} className="text-indigo-600 font-bold text-sm hover:underline">Detalhes</button><span className="text-slate-200">|</span><button onClick={()=>excluir(c.id)} className="text-rose-400 font-bold text-sm hover:text-rose-600 hover:underline">Excluir</button></div></td>
                 </tr>
               ))}
@@ -1333,74 +1392,26 @@ function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
     if(!fornNome.trim()){alert('Informe o fornecedor.');return;}
     setSalvando(true);
     await supabase.from('compras').update({
-      status,
-      itens,
-      total,
+      status,itens,total,
       fornecedor_nome:fornNome,
       data:data||null,
       nota_fiscal:notaFiscal||null,
       observacoes:observacoes||null,
     }).eq('id',compra.id);
 
-    // Se status mudou para Recebido → atualiza estoque com custo médio ponderado
     if(status==='Recebido'&&compra.status!=='Recebido'){
-      await atualizarEstoqueCompra(itens);
-      setToast('Compra salva e estoque atualizado! ✅');setToastColor('emerald');
+      const{ok,naoEncontrados}=await atualizarEstoqueItens(itens);
+      setSalvando(false);
+      if(naoEncontrados.length>0){
+        setToast(`Salvo! ${ok} insumo(s) atualizado(s). Não encontrado(s): ${naoEncontrados.join(', ')}`);
+        setToastColor('indigo');
+      } else {
+        setToast(`Compra salva e ${ok} insumo(s) atualizado(s) no estoque! ✅`);
+        setToastColor('emerald');
+      }
     } else {
+      setSalvando(false);
       setToast('Compra salva!');setToastColor('emerald');
-    }
-    setSalvando(false);
-  };
-
-  // Atualiza estoque com custo médio ponderado ao receber uma compra
-  const atualizarEstoqueCompra=async(itensCompra:any[])=>{
-    const errosNaoEncontrados:string[]=[];
-    for(const item of itensCompra){
-      const qtdComprada=Number(item.quantidade)||0;
-      const custoCompra=Number(item.valor_unitario)||0;
-      if(!qtdComprada||!item.descricao?.trim())continue;
-
-      let insumo:any=null;
-
-      // 1. Tenta por insumo_id (quando item foi adicionado via busca de insumo)
-      if(item.insumo_id){
-        const{data}=await supabase.from('insumos').select('id,nome,estoque_atual,custo_unitario').eq('id',item.insumo_id).eq('ativo',true).maybeSingle();
-        insumo=data;
-      }
-
-      // 2. Tenta por nome exato (case-insensitive)
-      if(!insumo){
-        const{data}=await supabase.from('insumos').select('id,nome,estoque_atual,custo_unitario')
-          .ilike('nome',item.descricao.trim()).eq('ativo',true).maybeSingle();
-        insumo=data;
-      }
-
-      // 3. Tenta busca parcial (contém o texto)
-      if(!insumo){
-        const{data}=await supabase.from('insumos').select('id,nome,estoque_atual,custo_unitario')
-          .ilike('nome',`%${item.descricao.trim()}%`).eq('ativo',true).limit(1);
-        insumo=data?.[0]||null;
-      }
-
-      if(!insumo){
-        errosNaoEncontrados.push(item.descricao);
-        continue;
-      }
-
-      const qtdAtual=Number(insumo.estoque_atual)||0;
-      const custoAtual=Number(insumo.custo_unitario)||0;
-      const novaQtd=qtdAtual+qtdComprada;
-      // Custo médio ponderado
-      const novoCusto=novaQtd>0?((qtdAtual*custoAtual)+(qtdComprada*custoCompra))/novaQtd:custoCompra;
-
-      await supabase.from('insumos').update({
-        estoque_atual:Number(novaQtd.toFixed(4)),
-        custo_unitario:Number(novoCusto.toFixed(6)),
-        updated_at:new Date().toISOString(),
-      }).eq('id',insumo.id);
-    }
-    if(errosNaoEncontrados.length>0){
-      console.warn('Insumos não encontrados no estoque (atualize manualmente):', errosNaoEncontrados);
     }
   };
 
@@ -1416,11 +1427,18 @@ function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
       status:'Aguardando',
     });
     await supabase.from('compras').update({status:'Recebido'}).eq('id',compra.id);
-    // Atualiza estoque com custo médio ponderado ao receber a compra
     if(compra.status!=='Recebido'){
-      await atualizarEstoqueCompra(itens);
+      const{ok,naoEncontrados}=await atualizarEstoqueItens(itens);
+      setSalvando(false);
+      const msg=naoEncontrados.length>0
+        ?`Lançado em Contas a Pagar! ${ok} insumo(s) atualizado(s). Não encontrado(s): ${naoEncontrados.join(', ')}`
+        :`Lançado em Contas a Pagar e ${ok} insumo(s) atualizado(s) no estoque! ✅`;
+      setToast(msg);setToastColor('indigo');
+    } else {
+      setSalvando(false);
+      setToast('Lançado em Contas a Pagar!');setToastColor('indigo');
     }
-    setSalvando(false);setToast('Lançado em Contas a Pagar e estoque atualizado! ✅');setToastColor('indigo');setTimeout(onClose,1800);
+    setTimeout(onClose,2200);
   };
 
   return(
