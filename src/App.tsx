@@ -649,15 +649,16 @@ function ModalDetalheOrcamento({pedido,onClose}:{pedido:Pedido;onClose:()=>void}
       data_vencimento:dataEntrega||pedido.data_entrega||null,
       status:'Aguardando',
     });
-    // Grava snapshot de custo no pedido para que Lucratividade não mude ao longo do tempo
-    // IMPORTANTE: sempre grava o snapshot, mesmo que seja 0 (sem BOM configurado)
-    // Isso garante que mudanças futuras no preço de compra não afetam o histórico
+    // Grava snapshot de custo via BOM no momento da venda
+    // null = sem BOM configurado (lucratividade vai recalcular com BOM atual)
+    // 0+ = custo calculado e congelado (não muda mais com preço de compra)
+    const snapshotFinal=custoInsumoSnapshot>0?custoInsumoSnapshot:null;
     const finalizado=statuses.find(s=>s.nome==='Finalizado');
     if(finalizado)await supabase.from('pedidos').update({
       status_id:finalizado.id,
       pagamento_confirmado:true,
       updated_at:new Date().toISOString(),
-      custo_insumos_snapshot:custoInsumoSnapshot, // sempre grava, nunca null
+      custo_insumos_snapshot:snapshotFinal,
     }).eq('id',pedido.id);
     refetch();setSalvando(false);showToast('Venda lançada em Contas a Receber! ✅','indigo');setTimeout(onClose,1800);
   };
@@ -1368,11 +1369,11 @@ function ComprasView({searchQuery,onAdd,onAbrirDetalhe}:{searchQuery:string;onAd
                   <td className="px-5 py-4 text-sm text-slate-500">{c.nota_fiscal||'—'}</td>
                   <td className="px-5 py-4 font-black text-indigo-600 text-sm">R$ {Number(c.total||0).toFixed(2)}</td>
                   <td className="px-5 py-4"><BadgeStatus status={c.status||'Pendente'} options={STATUS_COMPRA} onChange={async s=>{
-                    // Busca status atual do banco para garantir que não duplica
-                    const{data:atual}=await supabase.from('compras').select('status').eq('id',c.id).maybeSingle();
+                    const{data:atual}=await supabase.from('compras').select('status,estoque_atualizado').eq('id',c.id).maybeSingle();
                     await supabase.from('compras').update({status:s}).eq('id',c.id);
-                    if(s==='Recebido'&&atual?.status!=='Recebido'){
+                    if(s==='Recebido'&&!atual?.estoque_atualizado){
                       const{ok,naoEncontrados}=await atualizarEstoqueItens(c.itens||[]);
+                      await supabase.from('compras').update({estoque_atualizado:true}).eq('id',c.id);
                       const msg=naoEncontrados.length>0
                         ?`${ok} insumo(s) atualizado(s). Não encontrado(s): ${naoEncontrados.join(', ')}`
                         :`${ok} insumo(s) atualizado(s) no estoque ✅`;
@@ -1399,8 +1400,6 @@ function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
   const[salvando,setSalvando]=useState(false);
   const[toast,setToast]=useState('');
   const[toastColor,setToastColor]=useState<'emerald'|'indigo'|'rose'>('emerald');
-  // Controla se o estoque desta compra já foi atualizado para evitar dupla contagem
-  const estoqueJaAtualizado=useRef(compra.status==='Recebido');
   // Campos editáveis de cabeçalho
   const[fornNome,setFornNome]=useState(compra.fornecedor_nome||'');
   const[data,setData]=useState(compra.data?compra.data.slice(0,10):'');
@@ -1425,6 +1424,12 @@ function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
   const salvar=async()=>{
     if(!fornNome.trim()){alert('Informe o fornecedor.');return;}
     setSalvando(true);
+
+    // Busca estado ATUAL do banco — fonte da verdade para evitar dupla contagem
+    const{data:atual}=await supabase.from('compras')
+      .select('status,estoque_atualizado')
+      .eq('id',compra.id).maybeSingle();
+
     await supabase.from('compras').update({
       status,itens,total,
       fornecedor_nome:fornNome,
@@ -1433,14 +1438,16 @@ function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
       observacoes:observacoes||null,
     }).eq('id',compra.id);
 
-    // Atualiza estoque APENAS se está marcando Recebido pela primeira vez
-    // Usa ref para não depender da prop original (que é imutável)
-    if(status==='Recebido'&&!estoqueJaAtualizado.current){
+    // Só atualiza estoque se:
+    // 1. Status novo é Recebido
+    // 2. Ainda não foi atualizado no banco (estoque_atualizado = false/null)
+    if(status==='Recebido'&&!atual?.estoque_atualizado){
       const{ok,naoEncontrados}=await atualizarEstoqueItens(itens);
-      estoqueJaAtualizado.current=true; // evita dupla contagem em salvamentos futuros
+      // Marca no banco que o estoque desta compra já foi atualizado
+      await supabase.from('compras').update({estoque_atualizado:true}).eq('id',compra.id);
       setSalvando(false);
       if(naoEncontrados.length>0){
-        setToast(`Salvo! ${ok} insumo(s) atualizado(s). Não encontrado(s) no cadastro: ${naoEncontrados.join(', ')}`);
+        setToast(`Salvo! ${ok} insumo(s) atualizado(s). Não encontrado(s): ${naoEncontrados.join(', ')}`);
         setToastColor('indigo');
       } else {
         setToast(`Compra salva! ${ok} insumo(s) atualizado(s) no estoque ✅`);
@@ -1448,13 +1455,24 @@ function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
       }
     } else {
       setSalvando(false);
-      setToast('Compra salva!');setToastColor('emerald');
+      if(status==='Recebido'&&atual?.estoque_atualizado){
+        setToast('Compra salva! (estoque já estava atualizado)');
+      } else {
+        setToast('Compra salva!');
+      }
+      setToastColor('emerald');
     }
   };
 
   const enviarContasPagar=async()=>{
     if(!confirm('Lançar esta compra em Contas a Pagar?'))return;
     setSalvando(true);
+
+    // Busca estado ATUAL do banco
+    const{data:atual}=await supabase.from('compras')
+      .select('status,estoque_atualizado')
+      .eq('id',compra.id).maybeSingle();
+
     await supabase.from('contas_pagar').insert({
       compra_id:compra.id,
       fornecedor_nome:fornNome,
@@ -1464,9 +1482,10 @@ function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
       status:'Aguardando',
     });
     await supabase.from('compras').update({status:'Recebido'}).eq('id',compra.id);
-    if(!estoqueJaAtualizado.current){
+
+    if(!atual?.estoque_atualizado){
       const{ok,naoEncontrados}=await atualizarEstoqueItens(itens);
-      estoqueJaAtualizado.current=true;
+      await supabase.from('compras').update({estoque_atualizado:true}).eq('id',compra.id);
       setSalvando(false);
       const msg=naoEncontrados.length>0
         ?`Lançado em CP! ${ok} insumo(s) atualizado(s). Não encontrado(s): ${naoEncontrados.join(', ')}`
@@ -1474,7 +1493,8 @@ function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
       setToast(msg);setToastColor('indigo');
     } else {
       setSalvando(false);
-      setToast('Lançado em Contas a Pagar!');setToastColor('indigo');
+      setToast('Lançado em Contas a Pagar! (estoque já estava atualizado)');
+      setToastColor('indigo');
     }
     setTimeout(onClose,2200);
   };
@@ -2850,17 +2870,18 @@ function LucratividadeView() {
     }
 
     // 3. Montar lista de vendas com receita e custo
-    // Se custo_insumos_snapshot não é null → usa o valor histórico gravado no momento da venda
-    // Se é null → venda antiga sem snapshot, recalcula pelo BOM atual (transitório)
+    // snapshot > 0  = custo congelado no momento da venda — NÃO muda com preço de compra
+    // null ou 0     = sem BOM na época da venda — recalcula com BOM atual (pode variar)
     const vendasDetalhadas=vendas.map((p:any)=>{
-      const temSnapshot=p.custo_insumos_snapshot!==null&&p.custo_insumos_snapshot!==undefined;
-      const custoFinal=temSnapshot?Number(p.custo_insumos_snapshot):(custosPorPedido[p.id]||0);
+      const snap=Number(p.custo_insumos_snapshot||0);
+      const temSnapshot=snap>0;
+      const custoFinal=temSnapshot?snap:(custosPorPedido[p.id]||0);
       return{
         ...p,
         receita:Number(p.valor_total),
         custo:custoFinal,
         usandoSnapshot:temSnapshot,
-        lucro:(Number(p.valor_total))-custoFinal,
+        lucro:Number(p.valor_total)-custoFinal,
         margem:Number(p.valor_total)>0?((Number(p.valor_total)-custoFinal)/Number(p.valor_total))*100:0,
       };
     });
