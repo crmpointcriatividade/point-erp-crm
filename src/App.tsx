@@ -102,7 +102,7 @@ function TelaLogin({onLogin}:{onLogin:(u:AppUser)=>void}) {
 
 /* ── APP ROOT ──────────────────────────────────────────────── */
 export default function App() {
-  // Persiste sessão no sessionStorage para não deslogar ao navegar
+  // ── TODOS OS HOOKS DEVEM VIR ANTES DE QUALQUER RETURN CONDICIONAL ──
   const[user,setUser]=useState<AppUser|null>(()=>{
     try{const s=sessionStorage.getItem('point_user');return s?JSON.parse(s):null;}catch{return null;}
   });
@@ -123,26 +123,42 @@ export default function App() {
   const[caixaKey,setCaixaKey]=useState(0);
   const[bancarioKey,setBancarioKey]=useState(0);
   const[contaBancariaSelecionada,setContaBancariaSelecionada]=useState<any|null>(null);
+  // Estas chaves PRECISAM estar antes do early return — estavam depois e causavam o bug de tela branca
+  const[globalKey,setGlobalKey]=useState(0);
+  const[comprasKey,setComprasKey]=useState(0);
+  const[kanbanKey,setKanbanKey]=useState(0);
+
+  // Reload data when tab becomes visible
+  useEffect(()=>{
+    const handler=()=>{
+      if(document.visibilityState==='visible'){
+        setContasKey(k=>k+1);setKanbanKey(k=>k+1);setCaixaKey(k=>k+1);
+        setComprasKey(k=>k+1);setBancarioKey(k=>k+1);setGlobalKey(k=>k+1);
+      }
+    };
+    document.addEventListener('visibilitychange',handler);
+    return()=>document.removeEventListener('visibilitychange',handler);
+  },[]);
 
   const login=(u:AppUser)=>{
-    // Grava sessão ANTES de setar o user, garantindo que o estado
-    // seja consistente quando o componente re-renderiza
     sessionStorage.setItem('point_user',JSON.stringify(u));
     window.history.replaceState(null,'',window.location.pathname);
-    // Reseta todas as chaves de refresh para forçar reload dos dados
-    setGlobalKey(1);setKanbanKey(1);setContasKey(1);setCaixaKey(1);setBancarioKey(1);setComprasKey(1);
     setActiveTab('kanban');
     setModal(null);
     setSidebarOpen(false);
     setSearchQuery('');
-    // setUser por último para triggerar o re-render correto
+    setGlobalKey(k=>k+1);
+    setKanbanKey(k=>k+1);
+    setContasKey(k=>k+1);
+    setCaixaKey(k=>k+1);
+    setBancarioKey(k=>k+1);
+    setComprasKey(k=>k+1);
     setUser({...u});
   };
+
   const logout=()=>{
-    // Remove sessão ANTES de limpar user para evitar flash de tela
     sessionStorage.removeItem('point_user');
     window.history.replaceState(null,'',window.location.pathname);
-    // Reseta todo o estado de navegação
     setActiveTab('kanban');
     setModal(null);
     setSidebarOpen(false);
@@ -157,10 +173,10 @@ export default function App() {
     setCpSelecionado(null);
     setContaBancariaSelecionada(null);
     setGlobalKey(0);setKanbanKey(0);setContasKey(0);setCaixaKey(0);setBancarioKey(0);setComprasKey(0);
-    // setUser por último para triggerar o unmount correto
     setUser(null);
   };
 
+  // Early return DEPOIS de todos os hooks
   if(!user) return <TelaLogin onLogin={login}/>;
 
   const isAdmin=user.role==='admin';
@@ -194,27 +210,13 @@ export default function App() {
     return{label:'Novo Orçamento', action:()=>setModal('pedido')};
   };
   const btn=headerBtn();
-  const[globalKey,setGlobalKey]=useState(0);
+
   const navigate=(tab:string)=>{
     setActiveTab(tab);setSidebarOpen(false);setSearchQuery('');
-    // Incrementa globalKey para forçar remount de todos os componentes ao trocar de aba
     setGlobalKey(k=>k+1);
     setContasKey(k=>k+1);setKanbanKey(k=>k+1);setCaixaKey(k=>k+1);setComprasKey(k=>k+1);setBancarioKey(k=>k+1);
-    // Atualiza hash da URL para permitir navegação sem F5
     window.history.replaceState(null,'','#'+tab);
   };
-  // Inicializa aba a partir do hash da URL (permite bookmark e voltar sem F5)
-  useEffect(()=>{
-    const hash=window.location.hash.replace('#','');
-    if(hash&&tabs.some(t=>t.id===hash))setActiveTab(hash);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[]);
-  // Reload data when tab becomes visible (fixes F5 issue - data is always fresh on tab switch)
-  useEffect(()=>{
-    const handler=()=>{if(document.visibilityState==='visible'){setContasKey(k=>k+1);setKanbanKey(k=>k+1);setCaixaKey(k=>k+1);setComprasKey(k=>k+1);setBancarioKey(k=>k+1);setGlobalKey(k=>k+1);}};
-    document.addEventListener('visibilitychange',handler);
-    return()=>document.removeEventListener('visibilitychange',handler);
-  },[]);
 
   const abrirDetalheOrc=(p:Pedido)=>{setPedidoSelecionado(p);setModal('detalheOrc');};
   const abrirEditarCliente=(c:any)=>{setClienteSelecionadoEdit(c);setModal('editarCliente');};
@@ -228,9 +230,7 @@ export default function App() {
   const abrirPerfilCliente=(c:any)=>{setClienteSelecionadoEdit(c);setModal('perfilCliente');};
   const abrirDetalheCompra=(c:Compra)=>{setCompraSelecionada(c);setModal('detalheCompra');};
   // Key to force ComprasView reload after modal close
-  const[comprasKey,setComprasKey]=useState(0);
   const closeDetalheCompra=()=>{setModal(null);setCompraSelecionada(null);setComprasKey(k=>k+1);};
-  const[kanbanKey,setKanbanKey]=useState(0);
   const closeDetalheOrc=()=>{setModal(null);setPedidoSelecionado(null);setKanbanKey(k=>k+1);};
 
   return(
@@ -650,13 +650,14 @@ function ModalDetalheOrcamento({pedido,onClose}:{pedido:Pedido;onClose:()=>void}
       status:'Aguardando',
     });
     // Grava snapshot de custo no pedido para que Lucratividade não mude ao longo do tempo
+    // IMPORTANTE: sempre grava o snapshot, mesmo que seja 0 (sem BOM configurado)
+    // Isso garante que mudanças futuras no preço de compra não afetam o histórico
     const finalizado=statuses.find(s=>s.nome==='Finalizado');
     if(finalizado)await supabase.from('pedidos').update({
       status_id:finalizado.id,
       pagamento_confirmado:true,
       updated_at:new Date().toISOString(),
-      // Salva custo snapshot para uso em lucratividade (não é afetado por mudanças futuras de preço)
-      custo_insumos_snapshot:custoInsumoSnapshot>0?custoInsumoSnapshot:null,
+      custo_insumos_snapshot:custoInsumoSnapshot, // sempre grava, nunca null
     }).eq('id',pedido.id);
     refetch();setSalvando(false);showToast('Venda lançada em Contas a Receber! ✅','indigo');setTimeout(onClose,1800);
   };
@@ -1351,26 +1352,55 @@ function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
     setSalvando(false);
   };
 
-  // Função auxiliar: atualiza estoque com custo médio ponderado
+  // Atualiza estoque com custo médio ponderado ao receber uma compra
   const atualizarEstoqueCompra=async(itensCompra:any[])=>{
+    const errosNaoEncontrados:string[]=[];
     for(const item of itensCompra){
-      if(!item.descricao?.trim()||!item.quantidade||!item.valor_unitario)continue;
-      // Tenta encontrar o insumo pelo nome da descrição
-      const{data:insumos}=await supabase.from('insumos').select('id,estoque_atual,custo_unitario').ilike('nome',`%${item.descricao.trim()}%`).eq('ativo',true).limit(1);
-      if(!insumos||insumos.length===0)continue;
-      const ins=insumos[0];
-      const qtdAtual=Number(ins.estoque_atual)||0;
-      const custoAtual=Number(ins.custo_unitario)||0;
       const qtdComprada=Number(item.quantidade)||0;
       const custoCompra=Number(item.valor_unitario)||0;
-      // Custo médio ponderado = (qtd_atual × custo_atual + qtd_comprada × custo_compra) / (qtd_atual + qtd_comprada)
+      if(!qtdComprada||!item.descricao?.trim())continue;
+
+      let insumo:any=null;
+
+      // 1. Tenta por insumo_id (quando item foi adicionado via busca de insumo)
+      if(item.insumo_id){
+        const{data}=await supabase.from('insumos').select('id,nome,estoque_atual,custo_unitario').eq('id',item.insumo_id).eq('ativo',true).maybeSingle();
+        insumo=data;
+      }
+
+      // 2. Tenta por nome exato (case-insensitive)
+      if(!insumo){
+        const{data}=await supabase.from('insumos').select('id,nome,estoque_atual,custo_unitario')
+          .ilike('nome',item.descricao.trim()).eq('ativo',true).maybeSingle();
+        insumo=data;
+      }
+
+      // 3. Tenta busca parcial (contém o texto)
+      if(!insumo){
+        const{data}=await supabase.from('insumos').select('id,nome,estoque_atual,custo_unitario')
+          .ilike('nome',`%${item.descricao.trim()}%`).eq('ativo',true).limit(1);
+        insumo=data?.[0]||null;
+      }
+
+      if(!insumo){
+        errosNaoEncontrados.push(item.descricao);
+        continue;
+      }
+
+      const qtdAtual=Number(insumo.estoque_atual)||0;
+      const custoAtual=Number(insumo.custo_unitario)||0;
       const novaQtd=qtdAtual+qtdComprada;
+      // Custo médio ponderado
       const novoCusto=novaQtd>0?((qtdAtual*custoAtual)+(qtdComprada*custoCompra))/novaQtd:custoCompra;
+
       await supabase.from('insumos').update({
-        estoque_atual:novaQtd,
+        estoque_atual:Number(novaQtd.toFixed(4)),
         custo_unitario:Number(novoCusto.toFixed(6)),
         updated_at:new Date().toISOString(),
-      }).eq('id',ins.id);
+      }).eq('id',insumo.id);
+    }
+    if(errosNaoEncontrados.length>0){
+      console.warn('Insumos não encontrados no estoque (atualize manualmente):', errosNaoEncontrados);
     }
   };
 
@@ -1827,7 +1857,7 @@ function ModalNovaCompra({onClose}:{onClose:()=>void}) {
   useEffect(()=>{supabase.from('insumos').select('*').eq('ativo',true).order('nome').then(({data})=>setInsumosList(data||[]));},[]);
   const fornFilt=fornecedores.filter(f=>f.nome.toLowerCase().includes(buscaF.toLowerCase())&&buscaF.length>0).slice(0,6);
   const insumosFilt=insumosList.filter(i=>i.nome.toLowerCase().includes(buscaInsumo.toLowerCase())&&buscaInsumo.length>0).slice(0,6);
-  const addInsumo=(ins:any)=>{setItens(p=>[...p,{id:crypto.randomUUID(),descricao:ins.nome,quantidade:1,valor_unitario:Number(ins.custo_unitario)||0}]);setBuscaInsumo('');setShowInsumo(false);};
+  const addInsumo=(ins:any)=>{setItens(p=>[...p,{id:crypto.randomUUID(),insumo_id:ins.id,descricao:ins.nome,quantidade:1,valor_unitario:Number(ins.custo_unitario)||0}]);setBuscaInsumo('');setShowInsumo(false);};
   const total=itens.reduce((a,i)=>a+i.quantidade*i.valor_unitario,0);
   const addL=()=>setItens(p=>[...p,{id:crypto.randomUUID(),descricao:'',quantidade:1,valor_unitario:0}]);
   const upd=(id:string,k:string,v:any)=>setItens(p=>p.map(i=>i.id===id?{...i,[k]:v}:i));
@@ -2744,15 +2774,17 @@ function LucratividadeView() {
       }
     }
 
-    // 3. Montar lista de vendas com receita e custo (usa snapshot gravado no momento da venda se disponível)
+    // 3. Montar lista de vendas com receita e custo
+    // Se custo_insumos_snapshot não é null → usa o valor histórico gravado no momento da venda
+    // Se é null → venda antiga sem snapshot, recalcula pelo BOM atual (transitório)
     const vendasDetalhadas=vendas.map((p:any)=>{
-      // Preferência ao snapshot gravado no momento da venda (imutável)
-      const custoFinal=p.custo_insumos_snapshot!=null?Number(p.custo_insumos_snapshot):(custosPorPedido[p.id]||0);
+      const temSnapshot=p.custo_insumos_snapshot!==null&&p.custo_insumos_snapshot!==undefined;
+      const custoFinal=temSnapshot?Number(p.custo_insumos_snapshot):(custosPorPedido[p.id]||0);
       return{
         ...p,
         receita:Number(p.valor_total),
         custo:custoFinal,
-        usandoSnapshot:p.custo_insumos_snapshot!=null,
+        usandoSnapshot:temSnapshot,
         lucro:(Number(p.valor_total))-custoFinal,
         margem:Number(p.valor_total)>0?((Number(p.valor_total)-custoFinal)/Number(p.valor_total))*100:0,
       };
