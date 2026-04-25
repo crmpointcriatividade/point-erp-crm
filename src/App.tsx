@@ -1502,10 +1502,34 @@ function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
               )}
             </div>
           </div>
-          {/* Status */}
+          {/* Status — ao mudar para Recebido já salva e atualiza estoque */}
           <div>
             <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-1.5">Status</label>
-            <BadgeStatus status={status} options={STATUS_COMPRA} onChange={setStatus}/>
+            <BadgeStatus status={status} options={STATUS_COMPRA} onChange={async(novoStatus)=>{
+              setStatus(novoStatus);
+              // Se mudou para Recebido e estoque ainda não foi contabilizado → salva e atualiza imediatamente
+              if(novoStatus==='Recebido'&&!estoqueJaAtualizado.current){
+                setSalvando(true);
+                await supabase.from('compras').update({status:novoStatus,itens,total,fornecedor_nome:fornNome,data:data||null,nota_fiscal:notaFiscal||null,observacoes:observacoes||null}).eq('id',compra.id);
+                const{ok,naoEncontrados}=await atualizarEstoqueItens(itens);
+                estoqueJaAtualizado.current=true;
+                setSalvando(false);
+                if(naoEncontrados.length>0){
+                  setToast(`Status salvo! ${ok} insumo(s) atualizado(s). Não encontrado(s): ${naoEncontrados.join(', ')}`);
+                  setToastColor('indigo');
+                } else {
+                  setToast(`Status Recebido! ${ok} insumo(s) atualizado(s) no estoque ✅`);
+                  setToastColor('emerald');
+                }
+              }
+            }}/>
+            {/* Indicador visual quando estoque já foi atualizado */}
+            {estoqueJaAtualizado.current&&(
+              <p className="text-[11px] text-emerald-600 font-bold mt-1 flex items-center gap-1"><CheckCircle2 size={11}/>Estoque já contabilizado</p>
+            )}
+            {!estoqueJaAtualizado.current&&status==='Recebido'&&(
+              <p className="text-[11px] text-amber-600 font-bold mt-1">⚠️ Salve para atualizar o estoque</p>
+            )}
           </div>
           {/* Data */}
           <div>
@@ -1565,14 +1589,9 @@ function ModalDetalheCompra({compra,onClose}:{compra:Compra;onClose:()=>void}) {
           {salvando?'Salvando...':'💾 Salvar Alterações'}
         </button>
       </div>
-      {status==='Recebido'&&compra.status!=='Recebido'&&(
-        <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 text-emerald-700 text-xs font-bold flex items-center gap-2">
-          <CheckCircle2 size={13}/>Ao salvar com status Recebido, o estoque dos insumos será atualizado automaticamente com custo médio ponderado.
-        </div>
-      )}
       <button onClick={enviarContasPagar} disabled={salvando}
         className="w-full bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-rose-100 transition-all flex items-center justify-center gap-2">
-        <TrendingDown size={16}/>Enviar para Contas a Pagar {compra.status!=='Recebido'?'(+ atualiza estoque)':''}
+        <TrendingDown size={16}/>Enviar para Contas a Pagar {!estoqueJaAtualizado.current?'(+ atualiza estoque)':''}
       </button>
     </ModalWrapper>
     <AnimatePresence>{toast&&<Toast message={toast} color={toastColor} onClose={()=>setToast('')}/>}</AnimatePresence>
