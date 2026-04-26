@@ -604,18 +604,15 @@ function ModalDetalheOrcamento({pedido,onClose}:{pedido:Pedido;onClose:()=>void}
   const addItem=(prod:Produto)=>{
     const p=prod as any;
     const isMedida=p.unidade==='metro';
-    const largura=Number(p.largura_padrao)||0;
-    const altura=Number(p.altura_padrao)||0;
-    const metros2=isMedida&&largura&&altura?Number((largura*altura).toFixed(4)):0;
     setItens(prev=>[...prev,{
       id:'new-'+crypto.randomUUID(),pedido_id:pedido.id,produto_id:prod.id,
-      descricao_custom:prod.nome,quantidade:isMedida?(metros2||1):1,
+      descricao_custom:prod.nome,
+      quantidade:1,
       preco_unitario:0,custo_unitario:0,
-      // Campos extras para produtos metro
       _unidade:p.unidade||'unidade',
-      _largura:largura||'',
-      _altura:altura||'',
-      _metros2:metros2,
+      _largura:'',
+      _altura:'',
+      _metros2:0,
       _novo:true,
     }]);
     setBuscaProd('');setShowProd(false);
@@ -1991,19 +1988,15 @@ function ModalNovoPedido({onClose,onAbrirNovoProduto,onAbrirNovoCliente}:{onClos
 }
 
 function ModalNovoProduto({onClose}:{onClose:()=>void}) {
-  const[form,setForm]=useState({nome:'',descricao:'',categoria:'kit',markup:'2.5',mao:'25',unidade:'unidade',largura:'',altura:''});
+  const[form,setForm]=useState({nome:'',descricao:'',categoria:'kit',markup:'2.5',mao:'25',unidade:'unidade'});
   const[salvando,setSalvando]=useState(false);const[erro,setErro]=useState('');const[toast,setToast]=useState('');
-  const isMedida=form.unidade==='metro';
   const salvar=async()=>{
     if(!form.nome.trim()){setErro('Nome obrigatório.');return;}
     setSalvando(true);
     const{error}=await supabase.from('produtos').insert({
       nome:form.nome,descricao:form.descricao||null,categoria:form.categoria,
       markup_sugerido:Number(form.markup)||2.5,custo_mao_obra_hora:Number(form.mao)||25,
-      unidade:form.unidade,
-      largura_padrao:isMedida&&form.largura?Number(form.largura):null,
-      altura_padrao:isMedida&&form.altura?Number(form.altura):null,
-      ativo:true,
+      unidade:form.unidade,ativo:true,
     });
     if(error){setErro('Erro: '+error.message);setSalvando(false);}
     else{setToast('Produto cadastrado!');setTimeout(onClose,2000);}
@@ -2011,7 +2004,9 @@ function ModalNovoProduto({onClose}:{onClose:()=>void}) {
   return(
     <><ModalWrapper title="Cadastrar Produto" onClose={onClose}>
       {erro&&<MsgErro msg={erro}/>}
-      <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-sm text-indigo-700">💡 Produtos com unidade em <b>metro</b> permitem inserir L×A no orçamento para calcular m² automaticamente.</div>
+      <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-sm text-indigo-700">
+        💡 Produtos com unidade <b>Metro</b> pedem L×A diretamente no orçamento, calculando m² automaticamente.
+      </div>
       <Campo label="Nome *"><input type="text" placeholder="Ex: Faixa Lona, Adesivo Recorte..." value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} className={inputClass}/></Campo>
       <Campo label="Descrição"><input type="text" value={form.descricao} onChange={e=>setForm({...form,descricao:e.target.value})} className={inputClass}/></Campo>
       <div className="grid grid-cols-2 gap-4">
@@ -2023,21 +2018,17 @@ function ModalNovoProduto({onClose}:{onClose:()=>void}) {
           </select>
         </Campo>
         <Campo label="Unidade de Venda">
-          <select value={form.unidade} onChange={e=>setForm({...form,unidade:e.target.value,largura:'',altura:''})} className={inputClass}>
+          <select value={form.unidade} onChange={e=>setForm({...form,unidade:e.target.value})} className={inputClass}>
             <option value="unidade">Unidade</option>
             <option value="metro">Metro (L×A = m²)</option>
             <option value="folha">Folha</option>
           </select>
         </Campo>
       </div>
-      {isMedida&&(
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-3">
-          <p className="text-xs font-black text-amber-700 uppercase tracking-wider">📐 Dimensões padrão (opcional — pode alterar no orçamento)</p>
-          <div className="grid grid-cols-2 gap-3">
-            <Campo label="Largura padrão (m)"><input type="number" step="0.01" min="0" placeholder="Ex: 1.00" value={form.largura} onChange={e=>setForm({...form,largura:e.target.value})} className={inputClass}/></Campo>
-            <Campo label="Altura padrão (m)"><input type="number" step="0.01" min="0" placeholder="Ex: 0.50" value={form.altura} onChange={e=>setForm({...form,altura:e.target.value})} className={inputClass}/></Campo>
-          </div>
-          {form.largura&&form.altura&&<p className="text-xs font-bold text-amber-700">Área padrão: {(Number(form.largura)*Number(form.altura)).toFixed(4)} m²</p>}
+      {form.unidade==='metro'&&(
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-700 flex items-start gap-2">
+          <span className="text-lg leading-none">📐</span>
+          <span>No orçamento, cada item pedirá <b>Largura × Altura</b> e calculará o m² automaticamente.</span>
         </div>
       )}
       <div className="grid grid-cols-2 gap-3">
@@ -3358,8 +3349,6 @@ function ModalEditarProduto({produto,onClose}:{produto:any;onClose:()=>void}) {
     nome:produto.nome||'',descricao:produto.descricao||'',categoria:produto.categoria||'kit',
     markup_sugerido:String(produto.markup_sugerido||2.5),custo_mao_obra_hora:String(produto.custo_mao_obra_hora||25),
     unidade:produto.unidade||'unidade',
-    largura_padrao:String(produto.largura_padrao||''),
-    altura_padrao:String(produto.altura_padrao||''),
   });
   const isMedida=form.unidade==='metro';
   const[bom,setBom]=useState<any[]>([]);
@@ -3382,8 +3371,6 @@ function ModalEditarProduto({produto,onClose}:{produto:any;onClose:()=>void}) {
       nome:form.nome,descricao:form.descricao||null,categoria:form.categoria,
       markup_sugerido:Number(form.markup_sugerido),custo_mao_obra_hora:Number(form.custo_mao_obra_hora),
       unidade:form.unidade,
-      largura_padrao:isMedida&&form.largura_padrao?Number(form.largura_padrao):null,
-      altura_padrao:isMedida&&form.altura_padrao?Number(form.altura_padrao):null,
       updated_at:new Date().toISOString(),
     }).eq('id',produto.id);
     const novos=bom.filter(b=>b._novo);
@@ -3402,7 +3389,7 @@ function ModalEditarProduto({produto,onClose}:{produto:any;onClose:()=>void}) {
         </select>
       </Campo>
       <Campo label="Unidade de Venda">
-        <select value={form.unidade} onChange={e=>setForm({...form,unidade:e.target.value,largura_padrao:'',altura_padrao:''})} className={inputClass}>
+        <select value={form.unidade} onChange={e=>setForm({...form,unidade:e.target.value})} className={inputClass}>
           <option value="unidade">Unidade</option>
           <option value="metro">Metro (L×A = m²)</option>
           <option value="folha">Folha</option>
@@ -3410,13 +3397,9 @@ function ModalEditarProduto({produto,onClose}:{produto:any;onClose:()=>void}) {
       </Campo>
     </div>
     {isMedida&&(
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-3">
-        <p className="text-xs font-black text-amber-700 uppercase tracking-wider">📐 Dimensões padrão (pré-preenche no orçamento)</p>
-        <div className="grid grid-cols-2 gap-3">
-          <Campo label="Largura padrão (m)"><input type="number" step="0.01" min="0" placeholder="Ex: 1.00" value={form.largura_padrao} onChange={e=>setForm({...form,largura_padrao:e.target.value})} className={inputClass}/></Campo>
-          <Campo label="Altura padrão (m)"><input type="number" step="0.01" min="0" placeholder="Ex: 0.50" value={form.altura_padrao} onChange={e=>setForm({...form,altura_padrao:e.target.value})} className={inputClass}/></Campo>
-        </div>
-        {form.largura_padrao&&form.altura_padrao&&<p className="text-xs font-bold text-amber-700">Área padrão: {(Number(form.largura_padrao)*Number(form.altura_padrao)).toFixed(4)} m²</p>}
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-700 flex items-start gap-2">
+        <span className="text-lg leading-none">📐</span>
+        <span>No orçamento, cada item pedirá <b>Largura × Altura</b> do cliente e calculará m² automaticamente.</span>
       </div>
     )}
     <div className="grid grid-cols-2 gap-3">
