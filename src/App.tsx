@@ -1914,9 +1914,33 @@ function ModalNovoPedido({onClose,onAbrirNovoProduto,onAbrirNovoCliente}:{onClos
   const clisFilt=clientes.filter(c=>c.nome.toLowerCase().includes(buscaCli.toLowerCase())&&buscaCli.length>0).slice(0,6);
   const prodsFilt=produtos.filter(p=>p.nome.toLowerCase().includes(buscaProd.toLowerCase())&&buscaProd.length>0).slice(0,6);
   const total=itens.reduce((a,i)=>a+i.quantidade*i.preco_unitario,0);
-  const addItem=(p:Produto)=>{setItens(prev=>[...prev,{id:crypto.randomUUID(),produto_id:p.id,descricao_custom:p.descricao||p.nome,quantidade:1,preco_unitario:0,custo_unitario:0}]);setBuscaProd('');setShowProd(false);};
-  const addManual=()=>{setItens(prev=>[...prev,{id:crypto.randomUUID(),produto_id:null,descricao_custom:buscaProd||'',quantidade:1,preco_unitario:0,custo_unitario:0}]);setBuscaProd('');setShowProd(false);};
-  const upd=(id:string,k:string,v:any)=>setItens(prev=>prev.map(i=>i.id===id?{...i,[k]:v}:i));
+  const addItem=(p:Produto)=>{
+    const prod=p as any;
+    const isMedida=prod.unidade==='metro';
+    setItens(prev=>[...prev,{
+      id:crypto.randomUUID(),produto_id:p.id,
+      descricao_custom:p.nome,
+      quantidade:1,preco_unitario:0,custo_unitario:0,
+      _unidade:prod.unidade||'unidade',
+      _largura:'',_altura:'',_metros2:0,
+    }]);
+    setBuscaProd('');setShowProd(false);
+  };
+  const addManual=()=>{
+    setItens(prev=>[...prev,{id:crypto.randomUUID(),produto_id:null,descricao_custom:buscaProd||'',quantidade:1,preco_unitario:0,custo_unitario:0,_unidade:'unidade',_largura:'',_altura:'',_metros2:0}]);
+    setBuscaProd('');setShowProd(false);
+  };
+  const upd=(id:string,k:string,v:any)=>setItens(prev=>prev.map(i=>{
+    if(i.id!==id)return i;
+    const u={...i,[k]:v};
+    if((k==='_largura'||k==='_altura')&&u._unidade==='metro'){
+      const l=Number(k==='_largura'?v:u._largura)||0;
+      const a=Number(k==='_altura'?v:u._altura)||0;
+      u._metros2=l&&a?Number((l*a).toFixed(4)):0;
+      u.quantidade=u._metros2||1;
+    }
+    return u;
+  }));
   const del=(id:string)=>setItens(prev=>prev.filter(i=>i.id!==id));
   const salvar=async()=>{
     const nome=cli?.nome||buscaCli.trim();if(!nome){setErro('Informe o cliente.');return;}if(!si){setErro('Aguarde...');return;}
@@ -1924,7 +1948,14 @@ function ModalNovoPedido({onClose,onAbrirNovoProduto,onAbrirNovoCliente}:{onClos
     const{data:pedido,error}=await criarPedido({cliente_id:cli?.id,cliente_nome_avulso:cli?undefined:nome,cliente_contato_avulso:cli?.whatsapp||undefined,status_id:si.id,data_entrega:form.data_entrega||undefined,observacoes:form.observacoes||undefined});
     if(error||!pedido){setErro('Erro: '+(error?.message||''));setSalvando(false);return;}
     const linhas=itens.filter(i=>i.descricao_custom?.trim()||i.produto_id);
-    if(linhas.length>0)await supabase.from('itens_pedido').insert(linhas.map(({id,...rest})=>({pedido_id:(pedido as any).id,...rest})));
+    if(linhas.length>0){
+      const rows=linhas.map(({id,_unidade,_largura,_altura,_metros2,...rest})=>{
+        const row:any={pedido_id:(pedido as any).id,...rest};
+        if(_unidade==='metro')row.dimensoes={largura:Number(_largura)||0,altura:Number(_altura)||0,metros2:Number(_metros2)||0};
+        return row;
+      });
+      await supabase.from('itens_pedido').insert(rows);
+    }
     setToast('Orçamento criado!');setTimeout(onClose,1800);
   };
   return(
@@ -1960,20 +1991,56 @@ function ModalNovoPedido({onClose,onAbrirNovoProduto,onAbrirNovoCliente}:{onClos
         </div>
         {itens.length>0?(
           <div className="border border-slate-200 rounded-2xl overflow-hidden overflow-x-auto">
-            <table className="w-full text-sm min-w-[460px]">
-              <thead><tr className="bg-slate-50 border-b border-slate-100"><th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase">Descrição</th><th className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 uppercase w-16">Qtd</th><th className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 uppercase w-28">Vlr Unit (R$)</th><th className="px-3 py-2.5 text-right text-[10px] font-black text-slate-400 uppercase w-24">Total</th><th className="w-8"></th></tr></thead>
+            <table className="w-full text-sm min-w-[480px]">
+              <thead><tr className="bg-slate-50 border-b border-slate-100">
+                <th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase">Descrição</th>
+                <th className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 uppercase w-40">Qtd / Medida</th>
+                <th className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 uppercase w-28">Vlr Unit (R$)</th>
+                <th className="px-3 py-2.5 text-right text-[10px] font-black text-slate-400 uppercase w-24">Total</th>
+                <th className="w-8"></th>
+              </tr></thead>
               <tbody className="divide-y divide-slate-100">
-                {itens.map(item=>(
-                  <tr key={item.id}>
-                    <td className="px-3 py-2"><input type="text" value={item.descricao_custom||''} onChange={e=>upd(item.id,'descricao_custom',e.target.value)} placeholder="Descrição" className="w-full text-sm bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/></td>
-                    <td className="px-3 py-2"><input type="number" min="1" value={item.quantidade} onChange={e=>upd(item.id,'quantidade',Math.max(1,Number(e.target.value)))} className="w-full text-center text-sm font-bold bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/></td>
-                    <td className="px-3 py-2"><input type="number" min="0" step="0.01" value={item.preco_unitario} onChange={e=>upd(item.id,'preco_unitario',Number(e.target.value))} className="w-full text-center text-sm font-bold bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/></td>
-                    <td className="px-3 py-2 text-right font-black text-indigo-600 text-sm">R$ {(item.quantidade*item.preco_unitario).toFixed(2)}</td>
-                    <td className="px-3 py-2"><button onClick={()=>del(item.id)} className="text-slate-300 hover:text-rose-500"><Trash2 size={13}/></button></td>
-                  </tr>
-                ))}
+                {itens.map(item=>{
+                  const isMedida=item._unidade==='metro';
+                  return(
+                    <tr key={item.id} className={isMedida?'bg-amber-50/40':''}>
+                      <td className="px-3 py-2">
+                        <input type="text" value={item.descricao_custom||''} onChange={e=>upd(item.id,'descricao_custom',e.target.value)} placeholder="Descrição" className="w-full text-sm bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/>
+                        {isMedida&&<span className="text-[10px] font-black text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded mt-0.5 inline-block">📐 metro</span>}
+                      </td>
+                      <td className="px-3 py-2">
+                        {isMedida?(
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1 justify-center">
+                              <input type="number" min="0" step="0.01" placeholder="L" value={item._largura||''} onChange={e=>upd(item.id,'_largura',e.target.value)}
+                                className="w-14 text-center text-xs font-bold bg-white border border-slate-200 rounded-lg py-1 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-200"/>
+                              <span className="text-slate-400 font-bold text-xs">×</span>
+                              <input type="number" min="0" step="0.01" placeholder="A" value={item._altura||''} onChange={e=>upd(item.id,'_altura',e.target.value)}
+                                className="w-14 text-center text-xs font-bold bg-white border border-slate-200 rounded-lg py-1 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-200"/>
+                            </div>
+                            <p className="text-center text-[10px] font-black text-amber-700">
+                              {item._metros2>0?`= ${item._metros2} m²`:'— m²'}
+                            </p>
+                          </div>
+                        ):(
+                          <input type="number" min="1" value={item.quantidade} onChange={e=>upd(item.id,'quantidade',Math.max(1,Number(e.target.value)))} className="w-full text-center text-sm font-bold bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <input type="number" min="0" step="0.01" value={item.preco_unitario} onChange={e=>upd(item.id,'preco_unitario',Number(e.target.value))} className="w-full text-center text-sm font-bold bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/>
+                        {isMedida&&<p className="text-[10px] text-slate-400 text-center">por m²</p>}
+                      </td>
+                      <td className="px-3 py-2 text-right font-black text-indigo-600 text-sm">R$ {(item.quantidade*item.preco_unitario).toFixed(2)}</td>
+                      <td className="px-3 py-2"><button onClick={()=>del(item.id)} className="text-slate-300 hover:text-rose-500"><Trash2 size={13}/></button></td>
+                    </tr>
+                  );
+                })}
               </tbody>
-              <tfoot><tr className="bg-indigo-50 border-t-2 border-indigo-100"><td colSpan={3} className="px-3 py-3 text-right font-black text-slate-600 text-sm uppercase">Total:</td><td className="px-3 py-3 text-right font-black text-indigo-700">R$ {total.toFixed(2)}</td><td></td></tr></tfoot>
+              <tfoot><tr className="bg-indigo-50 border-t-2 border-indigo-100">
+                <td colSpan={3} className="px-3 py-3 text-right font-black text-slate-600 text-sm uppercase">Total:</td>
+                <td className="px-3 py-3 text-right font-black text-indigo-700">R$ {total.toFixed(2)}</td>
+                <td></td>
+              </tr></tfoot>
             </table>
           </div>
         ):(
