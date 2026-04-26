@@ -571,9 +571,21 @@ function ModalDetalheOrcamento({pedido,onClose}:{pedido:Pedido;onClose:()=>void}
 
   const statusAtual=statuses.find(s=>s.id===statusId);
 
-  // Carrega itens e produtos
   useEffect(()=>{
-    supabase.from('itens_pedido').select('*').eq('pedido_id',pedido.id).then(({data})=>setItens(data||[]));
+    supabase.from('itens_pedido').select('*').eq('pedido_id',pedido.id).then(({data})=>{
+      // Restaura campos de dimensão dos itens já salvos
+      const restored=(data||[]).map((item:any)=>{
+        const dim=item.dimensoes||{};
+        return{
+          ...item,
+          _unidade:dim.largura||dim.altura?'metro':'unidade',
+          _largura:dim.largura||'',
+          _altura:dim.altura||'',
+          _metros2:dim.metros2||0,
+        };
+      });
+      setItens(restored);
+    });
     supabase.from('produtos').select('*').eq('ativo',true).order('nome').then(({data})=>setProdutos(data||[]));
   },[pedido.id]);
 
@@ -590,32 +602,63 @@ function ModalDetalheOrcamento({pedido,onClose}:{pedido:Pedido;onClose:()=>void}
   const clisFiltrados=clientes.filter(c=>c.nome.toLowerCase().includes(buscaCli.toLowerCase())&&buscaCli.length>0&&!cliSelecionado).slice(0,6);
 
   const addItem=(prod:Produto)=>{
-    setItens(prev=>[...prev,{id:'new-'+crypto.randomUUID(),pedido_id:pedido.id,produto_id:prod.id,descricao_custom:prod.nome,quantidade:1,preco_unitario:0,custo_unitario:0,_novo:true}]);
+    const p=prod as any;
+    const isMedida=p.unidade==='metro';
+    const largura=Number(p.largura_padrao)||0;
+    const altura=Number(p.altura_padrao)||0;
+    const metros2=isMedida&&largura&&altura?Number((largura*altura).toFixed(4)):0;
+    setItens(prev=>[...prev,{
+      id:'new-'+crypto.randomUUID(),pedido_id:pedido.id,produto_id:prod.id,
+      descricao_custom:prod.nome,quantidade:isMedida?(metros2||1):1,
+      preco_unitario:0,custo_unitario:0,
+      // Campos extras para produtos metro
+      _unidade:p.unidade||'unidade',
+      _largura:largura||'',
+      _altura:altura||'',
+      _metros2:metros2,
+      _novo:true,
+    }]);
     setBuscaProd('');setShowProd(false);
   };
   const addManual=()=>{
-    setItens(prev=>[...prev,{id:'new-'+crypto.randomUUID(),pedido_id:pedido.id,produto_id:null,descricao_custom:buscaProd||'',quantidade:1,preco_unitario:0,custo_unitario:0,_novo:true}]);
+    setItens(prev=>[...prev,{id:'new-'+crypto.randomUUID(),pedido_id:pedido.id,produto_id:null,descricao_custom:buscaProd||'',quantidade:1,preco_unitario:0,custo_unitario:0,_unidade:'unidade',_largura:'',_altura:'',_metros2:0,_novo:true}]);
     setBuscaProd('');setShowProd(false);
   };
-  const upd=(id:string,k:string,v:any)=>setItens(prev=>prev.map(i=>i.id===id?{...i,[k]:v,_dirty:true}:i));
+  const upd=(id:string,k:string,v:any)=>setItens(prev=>prev.map(i=>{
+    if(i.id!==id)return i;
+    const upd={...i,[k]:v,_dirty:true};
+    // Recalcula m² e quantidade quando L ou A muda
+    if((k==='_largura'||k==='_altura')&&upd._unidade==='metro'){
+      const l=Number(k==='_largura'?v:upd._largura)||0;
+      const a=Number(k==='_altura'?v:upd._altura)||0;
+      upd._metros2=l&&a?Number((l*a).toFixed(4)):0;
+      upd.quantidade=upd._metros2||1;
+    }
+    return upd;
+  }));
   const del=(id:string)=>setItens(prev=>prev.filter(i=>i.id!==id));
   const total=itens.reduce((a,i)=>a+i.quantidade*i.preco_unitario,0);
 
   const salvarAlteracoes=async()=>{
     setSalvando(true);
-    // Monta update com cliente e entrega
     const updData:any={status_id:statusId,updated_at:new Date().toISOString(),data_entrega:dataEntrega||null};
     if(cliSelecionado?.id){updData.cliente_id=cliSelecionado.id;updData.cliente_nome_avulso=null;}
     else if(buscaCli.trim()){updData.cliente_nome_avulso=buscaCli.trim();updData.cliente_id=null;}
     await supabase.from('pedidos').update(updData).eq('id',pedido.id);
-    // Atualiza valor_total
     if(total>0)await supabase.from('pedidos').update({valor_total:total}).eq('id',pedido.id);
-    // Itens novos
+    // Helper para limpar campos internos (prefixo _) antes de salvar
+    const limpar=(item:any)=>{
+      const{_novo,_dirty,_unidade,_largura,_altura,_metros2,...rest}=item;
+      // Salva dimensões em campo JSON extra se for produto metro
+      if(_unidade==='metro'){
+        rest.dimensoes={largura:Number(_largura)||0,altura:Number(_altura)||0,metros2:Number(_metros2)||0};
+      }
+      return rest;
+    };
     const novos=itens.filter(i=>i._novo);
-    if(novos.length>0)await supabase.from('itens_pedido').insert(novos.map(({id,_novo,_dirty,...rest})=>rest));
-    // Itens editados (não novos, mas sujos)
+    if(novos.length>0)await supabase.from('itens_pedido').insert(novos.map(limpar));
     const editados=itens.filter(i=>i._dirty&&!i._novo);
-    for(const it of editados){const{_dirty,...rest}=it;await supabase.from('itens_pedido').update(rest).eq('id',it.id);}
+    for(const it of editados){await supabase.from('itens_pedido').update(limpar(it)).eq('id',it.id);}
     refetch();setSalvando(false);showToast('Orçamento salvo!','emerald');
   };
 
@@ -733,24 +776,48 @@ function ModalDetalheOrcamento({pedido,onClose}:{pedido:Pedido;onClose:()=>void}
 
         {itens.length>0?(
           <div className="border border-slate-200 rounded-2xl overflow-hidden overflow-x-auto">
-            <table className="w-full text-sm min-w-[460px]">
+            <table className="w-full text-sm min-w-[520px]">
               <thead><tr className="bg-slate-50 border-b border-slate-100">
                 <th className="px-3 py-2.5 text-left text-[10px] font-black text-slate-400 uppercase">Descrição</th>
-                <th className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 uppercase w-16">Qtd</th>
+                <th className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 uppercase w-40">Qtd / Medida</th>
                 <th className="px-3 py-2.5 text-center text-[10px] font-black text-slate-400 uppercase w-28">Vlr Unit (R$)</th>
                 <th className="px-3 py-2.5 text-right text-[10px] font-black text-slate-400 uppercase w-24">Total</th>
                 <th className="w-8"></th>
               </tr></thead>
               <tbody className="divide-y divide-slate-100">
-                {itens.map(item=>(
-                  <tr key={item.id}>
-                    <td className="px-3 py-2"><input type="text" value={item.descricao_custom||''} onChange={e=>upd(item.id,'descricao_custom',e.target.value)} className="w-full text-sm bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/></td>
-                    <td className="px-3 py-2"><input type="number" min="1" value={item.quantidade} onChange={e=>upd(item.id,'quantidade',Math.max(1,Number(e.target.value)))} className="w-full text-center text-sm font-bold bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/></td>
-                    <td className="px-3 py-2"><input type="number" min="0" step="0.01" value={item.preco_unitario} onChange={e=>upd(item.id,'preco_unitario',Number(e.target.value))} className="w-full text-center text-sm font-bold bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/></td>
-                    <td className="px-3 py-2 text-right font-black text-indigo-600 text-sm">R$ {(item.quantidade*item.preco_unitario).toFixed(2)}</td>
-                    <td className="px-3 py-2"><button onClick={()=>del(item.id)} className="text-slate-300 hover:text-rose-500"><Trash2 size={13}/></button></td>
-                  </tr>
-                ))}
+                {itens.map(item=>{
+                  const isMedida=item._unidade==='metro';
+                  return(
+                    <tr key={item.id} className={isMedida?'bg-amber-50/30':''}>
+                      <td className="px-3 py-2">
+                        <input type="text" value={item.descricao_custom||''} onChange={e=>upd(item.id,'descricao_custom',e.target.value)} className="w-full text-sm bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/>
+                        {isMedida&&<span className="text-[10px] font-black text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded mt-0.5 inline-block">📐 metro</span>}
+                      </td>
+                      <td className="px-3 py-2">
+                        {isMedida?(
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1 justify-center">
+                              <input type="number" min="0" step="0.01" placeholder="L" value={item._largura||''} onChange={e=>upd(item.id,'_largura',e.target.value)} className="w-14 text-center text-xs font-bold bg-white border border-slate-200 rounded-lg py-1 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-200"/>
+                              <span className="text-slate-400 font-bold text-xs">×</span>
+                              <input type="number" min="0" step="0.01" placeholder="A" value={item._altura||''} onChange={e=>upd(item.id,'_altura',e.target.value)} className="w-14 text-center text-xs font-bold bg-white border border-slate-200 rounded-lg py-1 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-200"/>
+                            </div>
+                            <p className="text-center text-[10px] font-black text-amber-700">
+                              {item._metros2>0?`${item._metros2} m²`:'— m²'}
+                            </p>
+                          </div>
+                        ):(
+                          <input type="number" min="1" value={item.quantidade} onChange={e=>upd(item.id,'quantidade',Math.max(1,Number(e.target.value)))} className="w-full text-center text-sm font-bold bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <input type="number" min="0" step="0.01" value={item.preco_unitario} onChange={e=>upd(item.id,'preco_unitario',Number(e.target.value))} className="w-full text-center text-sm font-bold bg-transparent border-b border-transparent focus:border-indigo-400 outline-none py-0.5"/>
+                        {isMedida&&<p className="text-[10px] text-slate-400 text-center">por m²</p>}
+                      </td>
+                      <td className="px-3 py-2 text-right font-black text-indigo-600 text-sm">R$ {(item.quantidade*item.preco_unitario).toFixed(2)}</td>
+                      <td className="px-3 py-2"><button onClick={()=>del(item.id)} className="text-slate-300 hover:text-rose-500"><Trash2 size={13}/></button></td>
+                    </tr>
+                  );
+                })}
               </tbody>
               <tfoot><tr className="bg-indigo-50 border-t-2 border-indigo-100">
                 <td colSpan={3} className="px-3 py-3 text-right font-black text-slate-600 text-sm uppercase">Total:</td>
@@ -1924,10 +1991,64 @@ function ModalNovoPedido({onClose,onAbrirNovoProduto,onAbrirNovoCliente}:{onClos
 }
 
 function ModalNovoProduto({onClose}:{onClose:()=>void}) {
-  const[form,setForm]=useState({nome:'',descricao:'',categoria:'kit',markup:'2.5',mao:'25'});
+  const[form,setForm]=useState({nome:'',descricao:'',categoria:'kit',markup:'2.5',mao:'25',unidade:'unidade',largura:'',altura:''});
   const[salvando,setSalvando]=useState(false);const[erro,setErro]=useState('');const[toast,setToast]=useState('');
-  const salvar=async()=>{if(!form.nome.trim()){setErro('Nome obrigatório.');return;}setSalvando(true);const{error}=await supabase.from('produtos').insert({nome:form.nome,descricao:form.descricao||null,categoria:form.categoria,markup_sugerido:Number(form.markup)||2.5,custo_mao_obra_hora:Number(form.mao)||25,ativo:true});if(error){setErro('Erro: '+error.message);setSalvando(false);}else{setToast('Produto cadastrado! Busque no orçamento.');setTimeout(onClose,2000);}};
-  return(<><ModalWrapper title="Cadastrar Produto" onClose={onClose}>{erro&&<MsgErro msg={erro}/>}<div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-sm text-indigo-700">💡 Após cadastrar, feche e busque no orçamento.</div><Campo label="Nome *"><input type="text" placeholder="Ex: Kit Festa Safari" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} className={inputClass}/></Campo><Campo label="Descrição"><input type="text" value={form.descricao} onChange={e=>setForm({...form,descricao:e.target.value})} className={inputClass}/></Campo><div className="grid grid-cols-3 gap-3"><Campo label="Categoria"><select value={form.categoria} onChange={e=>setForm({...form,categoria:e.target.value})} className={inputClass}><option value="kit">Kit</option><option value="adesivo">Adesivo</option><option value="impresso">Impresso</option><option value="personalizado">Personalizado</option></select></Campo><Campo label="Markup (×)"><input type="number" step="0.1" min="1" value={form.markup} onChange={e=>setForm({...form,markup:e.target.value})} className={inputClass}/></Campo><Campo label="MO/hora (R$)"><input type="number" step="0.5" min="0" value={form.mao} onChange={e=>setForm({...form,mao:e.target.value})} className={inputClass}/></Campo></div><BotaoSalvar onClick={salvar} loading={salvando} label="Cadastrar Produto"/></ModalWrapper><AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence></>);
+  const isMedida=form.unidade==='metro';
+  const salvar=async()=>{
+    if(!form.nome.trim()){setErro('Nome obrigatório.');return;}
+    setSalvando(true);
+    const{error}=await supabase.from('produtos').insert({
+      nome:form.nome,descricao:form.descricao||null,categoria:form.categoria,
+      markup_sugerido:Number(form.markup)||2.5,custo_mao_obra_hora:Number(form.mao)||25,
+      unidade:form.unidade,
+      largura_padrao:isMedida&&form.largura?Number(form.largura):null,
+      altura_padrao:isMedida&&form.altura?Number(form.altura):null,
+      ativo:true,
+    });
+    if(error){setErro('Erro: '+error.message);setSalvando(false);}
+    else{setToast('Produto cadastrado!');setTimeout(onClose,2000);}
+  };
+  return(
+    <><ModalWrapper title="Cadastrar Produto" onClose={onClose}>
+      {erro&&<MsgErro msg={erro}/>}
+      <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-sm text-indigo-700">💡 Produtos com unidade em <b>metro</b> permitem inserir L×A no orçamento para calcular m² automaticamente.</div>
+      <Campo label="Nome *"><input type="text" placeholder="Ex: Faixa Lona, Adesivo Recorte..." value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} className={inputClass}/></Campo>
+      <Campo label="Descrição"><input type="text" value={form.descricao} onChange={e=>setForm({...form,descricao:e.target.value})} className={inputClass}/></Campo>
+      <div className="grid grid-cols-2 gap-4">
+        <Campo label="Categoria">
+          <select value={form.categoria} onChange={e=>setForm({...form,categoria:e.target.value})} className={inputClass}>
+            <option value="kit">Kit</option><option value="adesivo">Adesivo</option>
+            <option value="impresso">Impresso</option><option value="banner">Banner / Lona</option>
+            <option value="personalizado">Personalizado</option>
+          </select>
+        </Campo>
+        <Campo label="Unidade de Venda">
+          <select value={form.unidade} onChange={e=>setForm({...form,unidade:e.target.value,largura:'',altura:''})} className={inputClass}>
+            <option value="unidade">Unidade</option>
+            <option value="metro">Metro (L×A = m²)</option>
+            <option value="folha">Folha</option>
+          </select>
+        </Campo>
+      </div>
+      {isMedida&&(
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-3">
+          <p className="text-xs font-black text-amber-700 uppercase tracking-wider">📐 Dimensões padrão (opcional — pode alterar no orçamento)</p>
+          <div className="grid grid-cols-2 gap-3">
+            <Campo label="Largura padrão (m)"><input type="number" step="0.01" min="0" placeholder="Ex: 1.00" value={form.largura} onChange={e=>setForm({...form,largura:e.target.value})} className={inputClass}/></Campo>
+            <Campo label="Altura padrão (m)"><input type="number" step="0.01" min="0" placeholder="Ex: 0.50" value={form.altura} onChange={e=>setForm({...form,altura:e.target.value})} className={inputClass}/></Campo>
+          </div>
+          {form.largura&&form.altura&&<p className="text-xs font-bold text-amber-700">Área padrão: {(Number(form.largura)*Number(form.altura)).toFixed(4)} m²</p>}
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-3">
+        <Campo label="Markup (×)"><input type="number" step="0.1" min="1" value={form.markup} onChange={e=>setForm({...form,markup:e.target.value})} className={inputClass}/></Campo>
+        <Campo label="MO/hora (R$)"><input type="number" step="0.5" min="0" value={form.mao} onChange={e=>setForm({...form,mao:e.target.value})} className={inputClass}/></Campo>
+      </div>
+      <BotaoSalvar onClick={salvar} loading={salvando} label="Cadastrar Produto"/>
+    </ModalWrapper>
+    <AnimatePresence>{toast&&<Toast message={toast} onClose={()=>setToast('')}/>}</AnimatePresence>
+    </>
+  );
 }
 
 function ModalNovoCliente({onClose}:{onClose:()=>void}) {
@@ -3233,7 +3354,14 @@ function ModalEditarInsumo({insumo,onClose}:{insumo:any;onClose:()=>void}) {
 
 /* ── MODAL EDITAR PRODUTO + COMPOSIÇÃO (BOM) ───────────────── */
 function ModalEditarProduto({produto,onClose}:{produto:any;onClose:()=>void}) {
-  const[form,setForm]=useState({nome:produto.nome||'',descricao:produto.descricao||'',categoria:produto.categoria||'kit',markup_sugerido:String(produto.markup_sugerido||2.5),custo_mao_obra_hora:String(produto.custo_mao_obra_hora||25)});
+  const[form,setForm]=useState({
+    nome:produto.nome||'',descricao:produto.descricao||'',categoria:produto.categoria||'kit',
+    markup_sugerido:String(produto.markup_sugerido||2.5),custo_mao_obra_hora:String(produto.custo_mao_obra_hora||25),
+    unidade:produto.unidade||'unidade',
+    largura_padrao:String(produto.largura_padrao||''),
+    altura_padrao:String(produto.altura_padrao||''),
+  });
+  const isMedida=form.unidade==='metro';
   const[bom,setBom]=useState<any[]>([]);
   const[insumosList,setInsumosList]=useState<any[]>([]);
   const[buscaIns,setBuscaIns]=useState('');const[showIns,setShowIns]=useState(false);const insRef=useRef<HTMLDivElement>(null);
@@ -3250,7 +3378,14 @@ function ModalEditarProduto({produto,onClose}:{produto:any;onClose:()=>void}) {
   const custoTotal=bom.reduce((a,b)=>{const ins=insumosList.find(i=>i.id===b.insumo_id)||b.insumos;return a+(Number(ins?.custo_unitario||0)*Number(b.quantidade_insumo||0)*(1+Number(b.percentual_desperdicio||0)/100));},0);
   const salvar=async()=>{
     setSalvando(true);
-    await supabase.from('produtos').update({nome:form.nome,descricao:form.descricao||null,categoria:form.categoria,markup_sugerido:Number(form.markup_sugerido),custo_mao_obra_hora:Number(form.custo_mao_obra_hora),updated_at:new Date().toISOString()}).eq('id',produto.id);
+    await supabase.from('produtos').update({
+      nome:form.nome,descricao:form.descricao||null,categoria:form.categoria,
+      markup_sugerido:Number(form.markup_sugerido),custo_mao_obra_hora:Number(form.custo_mao_obra_hora),
+      unidade:form.unidade,
+      largura_padrao:isMedida&&form.largura_padrao?Number(form.largura_padrao):null,
+      altura_padrao:isMedida&&form.altura_padrao?Number(form.altura_padrao):null,
+      updated_at:new Date().toISOString(),
+    }).eq('id',produto.id);
     const novos=bom.filter(b=>b._novo);
     if(novos.length>0)await supabase.from('composicao_produtos').insert(novos.map(({id,_novo,_dirty,insumos:ins,...rest})=>rest));
     const editados=bom.filter(b=>b._dirty&&!b._novo);
@@ -3260,7 +3395,34 @@ function ModalEditarProduto({produto,onClose}:{produto:any;onClose:()=>void}) {
   return(<><ModalWrapper title={`Editar Produto — ${produto.nome}`} onClose={onClose} size="lg">
     <Campo label="Nome *"><input type="text" value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} className={inputClass}/></Campo>
     <Campo label="Descrição"><input type="text" value={form.descricao} onChange={e=>setForm({...form,descricao:e.target.value})} className={inputClass}/></Campo>
-    <div className="grid grid-cols-3 gap-3"><Campo label="Categoria"><select value={form.categoria} onChange={e=>setForm({...form,categoria:e.target.value})} className={inputClass}>{['kit','adesivo','impresso','personalizado'].map(c=><option key={c} value={c}>{c}</option>)}</select></Campo><Campo label="Markup (×)"><input type="number" step="0.1" min="1" value={form.markup_sugerido} onChange={e=>setForm({...form,markup_sugerido:e.target.value})} className={inputClass}/></Campo><Campo label="MO/hora (R$)"><input type="number" step="0.5" min="0" value={form.custo_mao_obra_hora} onChange={e=>setForm({...form,custo_mao_obra_hora:e.target.value})} className={inputClass}/></Campo></div>
+    <div className="grid grid-cols-2 gap-3">
+      <Campo label="Categoria">
+        <select value={form.categoria} onChange={e=>setForm({...form,categoria:e.target.value})} className={inputClass}>
+          {['kit','adesivo','impresso','banner','personalizado'].map(c=><option key={c} value={c}>{c}</option>)}
+        </select>
+      </Campo>
+      <Campo label="Unidade de Venda">
+        <select value={form.unidade} onChange={e=>setForm({...form,unidade:e.target.value,largura_padrao:'',altura_padrao:''})} className={inputClass}>
+          <option value="unidade">Unidade</option>
+          <option value="metro">Metro (L×A = m²)</option>
+          <option value="folha">Folha</option>
+        </select>
+      </Campo>
+    </div>
+    {isMedida&&(
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-3">
+        <p className="text-xs font-black text-amber-700 uppercase tracking-wider">📐 Dimensões padrão (pré-preenche no orçamento)</p>
+        <div className="grid grid-cols-2 gap-3">
+          <Campo label="Largura padrão (m)"><input type="number" step="0.01" min="0" placeholder="Ex: 1.00" value={form.largura_padrao} onChange={e=>setForm({...form,largura_padrao:e.target.value})} className={inputClass}/></Campo>
+          <Campo label="Altura padrão (m)"><input type="number" step="0.01" min="0" placeholder="Ex: 0.50" value={form.altura_padrao} onChange={e=>setForm({...form,altura_padrao:e.target.value})} className={inputClass}/></Campo>
+        </div>
+        {form.largura_padrao&&form.altura_padrao&&<p className="text-xs font-bold text-amber-700">Área padrão: {(Number(form.largura_padrao)*Number(form.altura_padrao)).toFixed(4)} m²</p>}
+      </div>
+    )}
+    <div className="grid grid-cols-2 gap-3">
+      <Campo label="Markup (×)"><input type="number" step="0.1" min="1" value={form.markup_sugerido} onChange={e=>setForm({...form,markup_sugerido:e.target.value})} className={inputClass}/></Campo>
+      <Campo label="MO/hora (R$)"><input type="number" step="0.5" min="0" value={form.custo_mao_obra_hora} onChange={e=>setForm({...form,custo_mao_obra_hora:e.target.value})} className={inputClass}/></Campo>
+    </div>
     <div className="space-y-3">
       <div className="flex items-center justify-between"><p className="text-xs font-black text-slate-500 uppercase tracking-wider">Composição de Insumos (BOM)</p>{custoTotal>0&&<span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full">Custo: R$ {custoTotal.toFixed(4)} → Venda: R$ {(custoTotal*Number(form.markup_sugerido)).toFixed(2)}</span>}</div>
       <div className="relative" ref={insRef}>
